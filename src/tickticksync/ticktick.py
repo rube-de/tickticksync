@@ -204,9 +204,11 @@ class TickTickAPI:
         return await self._get_all_tasks_v1()
 
     async def _get_all_tasks_v2(self) -> tuple[list[dict[str, Any]], dict[str, str]]:
-        """V2 path: single SDK call, then fetch projects for the map."""
-        raw_tasks = await self._client.get_all_tasks_v2()
-        projects = await self._client.get_projects()
+        """V2 path: tasks and projects fetched concurrently, then merged."""
+        raw_tasks, projects = await asyncio.gather(
+            self._client.get_all_tasks_v2(),
+            self._client.get_projects(),
+        )
         project_map: dict[str, str] = {p["id"]: p["name"] for p in projects}
         tasks = [t for t in raw_tasks if not t.get("deleted")]
         return tasks, project_map

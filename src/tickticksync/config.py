@@ -4,6 +4,9 @@ import tomllib
 import tomlkit
 
 
+DEFAULT_CONFIG_PATH = Path("~/.config/tickticksync/config.toml").expanduser()
+
+
 @dataclass
 class TickTickConfig:
     client_id: str
@@ -26,7 +29,7 @@ class MappingConfig:
 @dataclass
 class AuthConfig:
     method: str = "oauth"
-    username: str = ""
+    username: str | None = None
 
 
 @dataclass
@@ -47,7 +50,7 @@ class Config:
 
 def load_config(path: Path | None = None) -> Config:
     if path is None:
-        path = Path("~/.config/tickticksync/config.toml").expanduser()
+        path = DEFAULT_CONFIG_PATH
     with open(path, "rb") as f:
         data = tomllib.load(f)
     return Config(
@@ -58,12 +61,15 @@ def load_config(path: Path | None = None) -> Config:
     )
 
 
-def save_config_auth(path: Path, method: str, username: str = "") -> None:
+def save_config_auth(path: Path, method: str, username: str | None = None) -> None:
     """Write or overwrite the [auth] section in the config file at *path*.
 
     Uses tomlkit to preserve existing formatting in other sections.
     """
-    text = path.read_text() if path.exists() else ""
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        text = ""
     doc = tomlkit.parse(text)
     auth_table = tomlkit.table()
     auth_table.add("method", method)

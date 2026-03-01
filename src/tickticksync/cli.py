@@ -14,7 +14,7 @@ import keyring
 import keyring.errors
 from ticktick_sdk.auth_cli import OAuth2Handler
 
-from .config import AuthConfig, Config, load_config, save_config_auth
+from .config import DEFAULT_CONFIG_PATH, AuthConfig, Config, load_config, save_config_auth
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
@@ -32,8 +32,14 @@ def _build_engine(cfg: Config) -> SyncEngine:
     state = StateStore(cfg.db_path)
     tw = TaskWarriorClient()
 
+    api_args = (cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path))
+
     if cfg.auth.method == "password":
         username = cfg.auth.username
+        if not username:
+            raise click.ClickException(
+                "No username configured. Run `tickticksync auth password`."
+            )
         try:
             password = keyring.get_password(_KEYRING_SERVICE, username)
         except keyring.errors.NoKeyringError:
@@ -45,17 +51,9 @@ def _build_engine(cfg: Config) -> SyncEngine:
             raise click.ClickException(
                 f"No stored password for {username!r}. Run `tickticksync auth password`."
             )
-        tt = TickTickAPI(
-            cfg.ticktick.client_id,
-            cfg.ticktick.client_secret,
-            str(cfg.token_path),
-            username=username,
-            password=password,
-        )
+        tt = TickTickAPI(*api_args, username=username, password=password)
     else:
-        tt = TickTickAPI(
-            cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path)
-        )
+        tt = TickTickAPI(*api_args)
 
     return SyncEngine(
         store=state, tw=tw, tt=tt, default_project=cfg.mapping.default_project
@@ -93,7 +91,7 @@ def auth() -> None:
 @auth.command("oauth")
 def auth_oauth() -> None:
     """Run the browser OAuth2 flow and save the access token."""
-    config_path = Path("~/.config/tickticksync/config.toml").expanduser()
+    config_path = DEFAULT_CONFIG_PATH
     cfg = load_config(config_path)
 
     redirect_uri = "http://localhost:8080/callback"
@@ -125,10 +123,10 @@ def auth_oauth() -> None:
     server_thread = threading.Thread(target=server.serve_forever)
     server_thread.daemon = True
     server_thread.start()
-    done.wait(timeout=300)
+    received = done.wait(timeout=300)
     server.shutdown()
 
-    if not captured.get("code"):
+    if not received or not captured.get("code"):
         raise click.ClickException("No OAuth code received within 5 minutes.")
 
     token = asyncio.run(handler.exchange_code(captured["code"], captured["state"]))
@@ -145,7 +143,7 @@ def auth_oauth() -> None:
 @auth.command("password")
 def auth_password() -> None:
     """Store TickTick username/password credentials in the system keyring."""
-    config_path = Path("~/.config/tickticksync/config.toml").expanduser()
+    config_path = DEFAULT_CONFIG_PATH
     load_config(config_path)  # validate config exists and is parseable
 
     username = click.prompt("TickTick username (email)")
