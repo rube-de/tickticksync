@@ -13,6 +13,7 @@ Real import: from ticktick_sdk import TickTickClient as _RealTickTickClient
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -51,14 +52,12 @@ class TickTickClient:
         *,
         v1_access_token: str | None = None,
     ) -> None:
-        token_file = Path(token_path)
         stored_token: str | None = None
-        if token_file.exists():
-            try:
-                data = json.loads(token_file.read_text())
-                stored_token = data.get("access_token")
-            except (json.JSONDecodeError, OSError):
-                logger.warning("Could not read token file: %s", token_path)
+        try:
+            data = json.loads(Path(token_path).read_text())
+            stored_token = data.get("access_token")
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            logger.debug("No usable token file at %s", token_path)
 
         effective_token = v1_access_token or stored_token
         self._real = _RealTickTickClient(
@@ -178,21 +177,20 @@ class TickTickAPI:
         projects = await self._client.get_projects()
         project_map: dict[str, str] = {p["id"]: p["name"] for p in projects}
 
-        all_tasks: list[dict[str, Any]] = []
-        for project in projects:
-            project_id: str = project["id"]
+        async def _fetch_project(project: dict) -> list[dict[str, Any]]:
             try:
-                data = await self._client.get_project_data(project_id)
-                tasks = data.get("tasks", [])
-                # Filter soft-deleted tasks (deleted == 1).
-                active = [t for t in tasks if not t.get("deleted")]
-                all_tasks.extend(active)
+                data = await self._client.get_project_data(project["id"])
+                return [t for t in data.get("tasks", []) if not t.get("deleted")]
             except Exception:
                 logger.exception(
                     "Failed to fetch tasks for project %s (%s)",
                     project.get("name"),
-                    project_id,
+                    project["id"],
                 )
+                return []
+
+        results = await asyncio.gather(*(_fetch_project(p) for p in projects))
+        all_tasks = [t for batch in results for t in batch]
 
         return all_tasks, project_map
 

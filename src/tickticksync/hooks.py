@@ -1,3 +1,4 @@
+import fcntl
 import json
 import socket
 import sys
@@ -27,37 +28,49 @@ def drain_queue(
 ) -> None:
     """Replay queued hook events. Called on daemon startup."""
     qp = Path(queue_path)
-    if not qp.exists():
+    try:
+        items: list[dict] = json.loads(qp.read_text())
+        qp.unlink()
+    except FileNotFoundError:
         return
-    items: list[dict] = json.loads(qp.read_text())
-    qp.unlink()
     for task in items:
         _send_fn(task, socket_path, queue_path)
 
 
-def on_add_hook() -> None:
-    """Entry point for TW on-add hook. Reads task from stdin, sends to daemon."""
+def _run_hook(skip_lines: int = 0) -> None:
+    """Shared logic for TW hook entry points."""
     from tickticksync.config import load_config
 
+    for _ in range(skip_lines):
+        sys.stdin.readline()
     task = json.loads(sys.stdin.readline())
     cfg = load_config()
     send_to_daemon(task, cfg.sync.socket_path, cfg.sync.queue_path)
-    print(json.dumps(task))  # TW hooks must echo the task back on stdout
+    print(json.dumps(task))
+
+
+def on_add_hook() -> None:
+    """Entry point for TW on-add hook. Reads task from stdin, sends to daemon."""
+    _run_hook(skip_lines=0)
 
 
 def on_modify_hook() -> None:
     """Entry point for TW on-modify hook. Reads modified task from stdin."""
-    from tickticksync.config import load_config
-
-    _original = sys.stdin.readline()  # first line: original task (discard)
-    modified = json.loads(sys.stdin.readline())
-    cfg = load_config()
-    send_to_daemon(modified, cfg.sync.socket_path, cfg.sync.queue_path)
-    print(json.dumps(modified))
+    _run_hook(skip_lines=1)
 
 
 def _append_to_queue(task: dict, queue_path: Path) -> None:
     queue_path.parent.mkdir(parents=True, exist_ok=True)
-    existing: list[dict] = json.loads(queue_path.read_text()) if queue_path.exists() else []
-    existing.append(task)
-    queue_path.write_text(json.dumps(existing))
+    fd = open(queue_path, "a+")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        fd.seek(0)
+        content = fd.read()
+        existing: list[dict] = json.loads(content) if content else []
+        existing.append(task)
+        fd.seek(0)
+        fd.truncate()
+        fd.write(json.dumps(existing))
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()

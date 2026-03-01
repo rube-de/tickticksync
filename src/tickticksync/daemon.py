@@ -66,29 +66,17 @@ class Daemon:
         while self._running:
             try:
                 task = await asyncio.wait_for(self._queue.get(), timeout=1.0)
-                await self._process_hook_task(task)
+                await self._engine.run_cycle(tw_tasks=[task])
             except asyncio.TimeoutError:
                 pass
 
     async def _poll_loop(self) -> None:
         while self._running:
-            await self._run_sync_cycle()
+            await self._engine.run_cycle()
+            self._engine.store.set_state("last_poll_ts", str(time.time()))
             await asyncio.sleep(self._poll_interval)
 
     async def _flush_hook_queue(self) -> None:
         while not self._queue.empty():
             task = self._queue.get_nowait()
-            await self._process_hook_task(task)
-
-    async def _process_hook_task(self, task: dict) -> None:
-        tw_tasks = [task]
-        tt_tasks, project_map = await self._engine.tt.get_all_tasks()
-        changes = self._engine.detect_changes(tw_tasks, tt_tasks)
-        await self._engine.apply_changes(changes, project_map)
-
-    async def _run_sync_cycle(self) -> None:
-        tw_tasks = self._engine.tw.get_pending_tasks()
-        tt_tasks, project_map = await self._engine.tt.get_all_tasks()
-        changes = self._engine.detect_changes(tw_tasks, tt_tasks)
-        await self._engine.apply_changes(changes, project_map)
-        self._engine.store.set_state("last_poll_ts", str(time.time()))
+            await self._engine.run_cycle(tw_tasks=[task])

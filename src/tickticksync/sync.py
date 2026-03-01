@@ -1,5 +1,6 @@
 import time
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Optional
 
 from .mapper import ticktick_task_to_tw, tw_task_to_ticktick
@@ -8,19 +9,35 @@ from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
 
 
+class ChangeKind(StrEnum):
+    TW_ONLY = "tw_only"
+    TT_ONLY = "tt_only"
+    CONFLICT = "conflict"
+    NEW_TW = "new_tw"
+    NEW_TT = "new_tt"
+
+
 @dataclass
 class SyncChange:
     tw_task: Optional[dict]
     tt_task: Optional[dict]
     mapping: Optional[TaskMapping]
-    kind: str  # "tw_only" | "tt_only" | "conflict" | "new_tw" | "new_tt"
+    kind: ChangeKind
 
 
 class SyncEngine:
-    def __init__(self, store: StateStore, tw: TaskWarriorClient, tt: TickTickAPI):
+    def __init__(
+        self,
+        store: StateStore,
+        tw: TaskWarriorClient,
+        tt: TickTickAPI,
+        *,
+        default_project: str = "inbox",
+    ):
         self.store = store
         self.tw = tw
         self.tt = tt
+        self._default_project = default_project
 
     def detect_changes(
         self, tw_tasks: list[dict], tt_tasks: list[dict]
@@ -41,20 +58,30 @@ class SyncEngine:
             tt_changed = tt_task and tt_task.get("modifiedTime") != mapping.ticktick_modified
 
             if tw_changed and not tt_changed:
-                changes.append(SyncChange(tw_task, tt_task, mapping, "tw_only"))
+                changes.append(SyncChange(tw_task, tt_task, mapping, ChangeKind.TW_ONLY))
             elif tt_changed and not tw_changed:
-                changes.append(SyncChange(tw_task, tt_task, mapping, "tt_only"))
+                changes.append(SyncChange(tw_task, tt_task, mapping, ChangeKind.TT_ONLY))
             elif tw_changed and tt_changed:
-                changes.append(SyncChange(tw_task, tt_task, mapping, "conflict"))
+                changes.append(SyncChange(tw_task, tt_task, mapping, ChangeKind.CONFLICT))
 
         for tw_task in tw_tasks:
             if str(tw_task["uuid"]) not in mapped_tw_uuids and not tw_task.get("ticktickid"):
-                changes.append(SyncChange(tw_task, None, None, "new_tw"))
+                changes.append(SyncChange(tw_task, None, None, ChangeKind.NEW_TW))
 
         for tt_task in tt_tasks:
             if tt_task["id"] not in mapped_tt_ids and not tt_task.get("deleted"):
-                changes.append(SyncChange(None, tt_task, None, "new_tt"))
+                changes.append(SyncChange(None, tt_task, None, ChangeKind.NEW_TT))
 
+        return changes
+
+    async def run_cycle(self, tw_tasks: list[dict] | None = None) -> list[SyncChange]:
+        """Run a full sync cycle: fetch, detect, apply. Returns applied changes."""
+        if tw_tasks is None:
+            tw_tasks = self.tw.get_pending_tasks()
+        tt_tasks, project_map = await self.tt.get_all_tasks()
+        changes = self.detect_changes(tw_tasks, tt_tasks)
+        with self.store.batch():
+            await self.apply_changes(changes, project_map)
         return changes
 
     async def apply_changes(
@@ -95,8 +122,9 @@ class SyncEngine:
             await self._push_tt_to_tw(change, project_map)
 
     async def _create_in_tt(self, change: SyncChange, project_map: dict) -> None:
+        target = self._default_project.lower()
         project_id = next(
-            (pid for pid, name in project_map.items() if name.lower() == "inbox"),
+            (pid for pid, name in project_map.items() if name.lower() == target),
             next(iter(project_map), ""),
         )
         tt_fields = tw_task_to_ticktick(change.tw_task, project_id)

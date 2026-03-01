@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -16,9 +17,10 @@ class TaskMapping:
 
 class StateStore:
     def __init__(self, db_path: Path):
-        self._db_path = Path(db_path)
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self._db_path))
+        db_path = Path(db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(db_path))
+        self._autocommit = True
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -38,6 +40,20 @@ class StateStore:
         """)
         self._conn.commit()
 
+    def _maybe_commit(self) -> None:
+        if self._autocommit:
+            self._conn.commit()
+
+    @contextmanager
+    def batch(self):
+        """Batch multiple writes into a single commit."""
+        self._autocommit = False
+        try:
+            yield
+        finally:
+            self._conn.commit()
+            self._autocommit = True
+
     def upsert_mapping(self, m: TaskMapping) -> None:
         self._conn.execute(
             """
@@ -52,7 +68,7 @@ class StateStore:
             (m.tw_uuid, m.ticktick_id, m.ticktick_project,
              m.last_sync_ts, m.tw_modified, m.ticktick_modified),
         )
-        self._conn.commit()
+        self._maybe_commit()
 
     def get_by_tw_uuid(self, tw_uuid: str) -> Optional[TaskMapping]:
         row = self._conn.execute(
@@ -70,9 +86,13 @@ class StateStore:
         rows = self._conn.execute("SELECT * FROM task_map").fetchall()
         return [TaskMapping(*r) for r in rows]
 
+    def count_mappings(self) -> int:
+        row = self._conn.execute("SELECT COUNT(*) FROM task_map").fetchone()
+        return row[0]
+
     def delete_by_tw_uuid(self, tw_uuid: str) -> None:
         self._conn.execute("DELETE FROM task_map WHERE tw_uuid=?", (tw_uuid,))
-        self._conn.commit()
+        self._maybe_commit()
 
     def get_state(self, key: str) -> Optional[str]:
         row = self._conn.execute(
@@ -86,7 +106,7 @@ class StateStore:
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
-        self._conn.commit()
+        self._maybe_commit()
 
     def close(self) -> None:
         self._conn.close()

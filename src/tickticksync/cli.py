@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from .config import load_config
+from .config import Config, load_config
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
@@ -15,6 +15,31 @@ from .daemon import Daemon
 
 PID_FILE = Path("~/.local/share/tickticksync/tickticksync.pid").expanduser()
 HOOKS_DIR = Path("~/.local/share/task/hooks").expanduser()
+
+
+def _build_engine(cfg: Config) -> SyncEngine:
+    state = StateStore(cfg.db_path)
+    tw = TaskWarriorClient()
+    tt = TickTickAPI(
+        cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path)
+    )
+    return SyncEngine(
+        store=state, tw=tw, tt=tt, default_project=cfg.mapping.default_project
+    )
+
+
+def _read_pid() -> int | None:
+    """Read PID from file and verify process exists. Cleans up stale files."""
+    try:
+        pid = int(PID_FILE.read_text())
+    except (FileNotFoundError, ValueError):
+        return None
+    try:
+        os.kill(pid, 0)
+        return pid
+    except ProcessLookupError:
+        PID_FILE.unlink(missing_ok=True)
+        return None
 
 
 @click.group()
@@ -62,19 +87,11 @@ def init() -> None:
 def sync() -> None:
     """Run one full sync cycle (no daemon required)."""
     cfg = load_config()
-    state = StateStore(cfg.db_path)
-    tw = TaskWarriorClient()
-    tt = TickTickAPI(
-        cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path)
-    )
-    engine = SyncEngine(store=state, tw=tw, tt=tt)
+    engine = _build_engine(cfg)
 
     async def _run() -> None:
-        tw_tasks = tw.get_pending_tasks()
-        tt_tasks, project_map = await tt.get_all_tasks()
-        changes = engine.detect_changes(tw_tasks, tt_tasks)
+        changes = await engine.run_cycle()
         click.echo(f"Detected {len(changes)} change(s).")
-        await engine.apply_changes(changes, project_map)
         click.echo("Sync complete.")
 
     asyncio.run(_run())
@@ -98,12 +115,7 @@ def daemon_start() -> None:
         return
 
     os.setsid()
-    state = StateStore(cfg.db_path)
-    tw = TaskWarriorClient()
-    tt = TickTickAPI(
-        cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path)
-    )
-    engine = SyncEngine(store=state, tw=tw, tt=tt)
+    engine = _build_engine(cfg)
     queue: asyncio.Queue = asyncio.Queue()
     d = Daemon(
         sync_engine=engine,
@@ -118,10 +130,11 @@ def daemon_start() -> None:
 @daemon.command("stop")
 def daemon_stop() -> None:
     """Stop the background sync daemon."""
-    if not PID_FILE.exists():
+    try:
+        pid = int(PID_FILE.read_text())
+    except (FileNotFoundError, ValueError):
         click.echo("Daemon is not running.")
         return
-    pid = int(PID_FILE.read_text())
     try:
         os.kill(pid, signal.SIGTERM)
         PID_FILE.unlink()
@@ -134,16 +147,11 @@ def daemon_stop() -> None:
 @daemon.command("status")
 def daemon_status() -> None:
     """Show daemon running status."""
-    if not PID_FILE.exists():
-        click.echo("Daemon: not running")
-        return
-    pid = int(PID_FILE.read_text())
-    try:
-        os.kill(pid, 0)
+    pid = _read_pid()
+    if pid is not None:
         click.echo(f"Daemon: running (PID {pid})")
-    except ProcessLookupError:
-        PID_FILE.unlink(missing_ok=True)
-        click.echo("Daemon: not running (stale PID file removed)")
+    else:
+        click.echo("Daemon: not running")
 
 
 @cli.command()
@@ -151,7 +159,7 @@ def status() -> None:
     """Show sync status: mapped task count, last sync time."""
     cfg = load_config()
     state = StateStore(cfg.db_path)
-    count = len(state.all_mappings())
+    count = state.count_mappings()
     last_poll = state.get_state("last_poll_ts")
     last_poll_str = (
         time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(last_poll)))

@@ -20,10 +20,7 @@ async def test_handle_hook_connection_enqueues_task():
 @pytest.mark.asyncio
 async def test_daemon_processes_queue_item(tmp_path):
     sync_engine = MagicMock()
-    sync_engine.tt = AsyncMock()
-    sync_engine.tt.get_all_tasks.return_value = ([], {})
-    sync_engine.detect_changes.return_value = []
-    sync_engine.apply_changes = AsyncMock()
+    sync_engine.run_cycle = AsyncMock(return_value=[])
     queue: asyncio.Queue = asyncio.Queue()
     await queue.put({"uuid": "u1", "description": "Task"})
 
@@ -36,3 +33,4 @@ async def test_daemon_processes_queue_item(tmp_path):
     )
     await daemon._flush_hook_queue()
     assert queue.empty()
+    sync_engine.run_cycle.assert_called_once_with(tw_tasks=[{"uuid": "u1", "description": "Task"}])

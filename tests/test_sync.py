@@ -1,7 +1,7 @@
 import time
 import pytest
 from unittest.mock import MagicMock, AsyncMock
-from tickticksync.sync import SyncEngine, SyncChange
+from tickticksync.sync import SyncEngine, SyncChange, ChangeKind
 from tickticksync.state import StateStore, TaskMapping
 
 
@@ -95,7 +95,7 @@ async def test_apply_tw_only_pushes_to_ticktick(engine, store):
         tw_task={"uuid": "uuid-1", "description": "Updated", "modified": "2024-06-01T00:00:00Z", "status": "pending"},
         tt_task={"id": "tt-1", "projectId": "proj-1"},
         mapping=mapping,
-        kind="tw_only",
+        kind=ChangeKind.TW_ONLY,
     )
     project_map = {"proj-1": "Work"}
     await engine.apply_changes([change], project_map)
@@ -110,7 +110,7 @@ async def test_apply_tt_only_updates_tw(engine, store):
         tw_task={"uuid": "uuid-1"},
         tt_task={"id": "tt-1", "title": "Updated", "status": 0, "projectId": "proj-1", "modifiedTime": "2024-06-01T00:00:00Z"},
         mapping=mapping,
-        kind="tt_only",
+        kind=ChangeKind.TT_ONLY,
     )
     project_map = {"proj-1": "Work"}
     await engine.apply_changes([change], project_map)
@@ -126,7 +126,7 @@ async def test_apply_conflict_tw_newer_wins(engine, store):
         tw_task={"uuid": "uuid-1", "description": "TW version", "modified": "2024-06-02T00:00:00Z", "status": "pending"},
         tt_task={"id": "tt-1", "title": "TT version", "modifiedTime": "2024-06-01T00:00:00Z", "projectId": "proj-1"},
         mapping=mapping,
-        kind="conflict",
+        kind=ChangeKind.CONFLICT,
     )
     project_map = {"proj-1": "Work"}
     await engine.apply_changes([change], project_map)
@@ -141,7 +141,7 @@ async def test_apply_new_tw_creates_in_ticktick(engine, store):
         tw_task={"uuid": "uuid-new", "description": "New", "modified": "2024-06-01T00:00:00Z", "status": "pending"},
         tt_task=None,
         mapping=None,
-        kind="new_tw",
+        kind=ChangeKind.NEW_TW,
     )
     project_map = {"proj-1": "Work"}
     await engine.apply_changes([change], project_map)
@@ -156,7 +156,7 @@ async def test_apply_new_tt_creates_in_tw(engine, store):
         tw_task=None,
         tt_task={"id": "tt-new", "title": "New", "status": 0, "projectId": "proj-1", "modifiedTime": "2024-06-01T00:00:00Z"},
         mapping=None,
-        kind="new_tt",
+        kind=ChangeKind.NEW_TT,
     )
     project_map = {"proj-1": "Work"}
     await engine.apply_changes([change], project_map)

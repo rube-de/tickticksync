@@ -23,26 +23,23 @@ class TaskWarriorClient:
         task.save()
         return str(task["uuid"])
 
-    def update_task(self, uuid: str, fields: dict) -> None:
+    def _get_task(self, uuid: str) -> tasklib.Task:
         tasks = self._tw.tasks.filter(uuid=uuid)
         if not tasks:
             raise ValueError(f"Task {uuid} not found")
-        task = tasks[0]
+        return tasks[0]
+
+    def update_task(self, uuid: str, fields: dict) -> None:
+        task = self._get_task(uuid)
         for k, v in fields.items():
             task[k] = v
         task.save()
 
     def complete_task(self, uuid: str) -> None:
-        tasks = self._tw.tasks.filter(uuid=uuid)
-        if not tasks:
-            raise ValueError(f"Task {uuid} not found")
-        tasks[0].done()
+        self._get_task(uuid).done()
 
     def delete_task(self, uuid: str) -> None:
-        tasks = self._tw.tasks.filter(uuid=uuid)
-        if not tasks:
-            raise ValueError(f"Task {uuid} not found")
-        tasks[0].delete()
+        self._get_task(uuid).delete()
 
     def register_uda(self, name: str, type_: str, label: str) -> None:
         subprocess.run(
