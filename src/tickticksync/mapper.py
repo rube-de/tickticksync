@@ -19,7 +19,7 @@ def tw_task_to_ticktick(tw_task: dict, project_id: str) -> dict:
     content_parts = [
         a["description"]
         for a in annotations
-        if not a["description"].startswith("[")
+        if not (a["description"].startswith("[x] ") or a["description"].startswith("[ ] "))
     ]
     if content_parts:
         tt["content"] = "\n".join(content_parts)
@@ -28,12 +28,14 @@ def tw_task_to_ticktick(tw_task: dict, project_id: str) -> dict:
 
 def ticktick_task_to_tw(tt_task: dict, project_name: str) -> dict:
     """Convert a TickTick task dict to a TaskWarrior task dict."""
+    tw_priority = TT_TO_TW_PRIORITY.get(tt_task.get("priority", 0))
     tw: dict = {
         "description": tt_task["title"],
         "project": project_name,
-        "priority": TT_TO_TW_PRIORITY.get(tt_task.get("priority", 0)),
         "status": "completed" if tt_task.get("status") == 2 else "pending",
     }
+    if tw_priority is not None:
+        tw["priority"] = tw_priority
     if due := tt_task.get("dueDate"):
         tw["due"] = due
 

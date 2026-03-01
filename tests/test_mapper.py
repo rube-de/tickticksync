@@ -86,3 +86,21 @@ def test_tt_to_tw_content_becomes_annotation():
     result = ticktick_task_to_tw(tt, project_name="P")
     ann_texts = [a["description"] for a in result.get("annotations", [])]
     assert "Some notes" in ann_texts
+
+
+def test_tw_to_tt_bracket_annotation_preserved_in_content():
+    """Annotations starting with [ but not subtask markers must survive into content."""
+    tw = {
+        "description": "Task",
+        "status": "pending",
+        "annotations": [{"description": "[URGENT] Call doctor"}],
+    }
+    result = tw_task_to_ticktick(tw, project_id="p")
+    assert "[URGENT] Call doctor" in result["content"]
+
+
+def test_tt_to_tw_unmapped_priority_omits_key():
+    """TickTick priority values 2 and 4 are not in the map — TW dict must not contain None."""
+    tt = {"id": "tt-1", "title": "Task", "status": 0, "priority": 2}
+    result = ticktick_task_to_tw(tt, project_name="P")
+    assert "priority" not in result or result.get("priority") is not None
