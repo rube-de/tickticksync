@@ -51,6 +51,8 @@ class TickTickClient:
         token_path: str,
         *,
         v1_access_token: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
     ) -> None:
         stored_token: str | None = None
         try:
@@ -64,6 +66,8 @@ class TickTickClient:
             client_id=client_id,
             client_secret=client_secret,
             v1_access_token=effective_token,
+            username=username,
+            password=password,
         )
         self._token_path = token_path
 
@@ -87,6 +91,11 @@ class TickTickClient:
     # ------------------------------------------------------------------
     # Tasks
     # ------------------------------------------------------------------
+
+    async def get_all_tasks_v2(self) -> list[dict[str, Any]]:
+        """Return all tasks via V2 (session) API as plain dicts."""
+        tasks = await self._real.get_all_tasks()
+        return [_to_dict(t) for t in tasks]
 
     async def get_project_data(self, project_id: str) -> dict[str, Any]:
         """Return project data (tasks + columns) for *project_id* as a plain dict."""
@@ -147,8 +156,20 @@ class TickTickAPI:
         token_path: Path to a JSON file where the OAuth token is persisted.
     """
 
-    def __init__(self, client_id: str, client_secret: str, token_path: str) -> None:
-        self._client = TickTickClient(client_id, client_secret, token_path)
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        token_path: str,
+        *,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> None:
+        self._client = TickTickClient(
+            client_id, client_secret, token_path,
+            username=username, password=password,
+        )
+        self._use_v2_tasks = username is not None
 
     async def connect(self) -> None:
         """Authenticate with TickTick."""
@@ -169,11 +190,29 @@ class TickTickAPI:
     async def get_all_tasks(self) -> tuple[list[dict[str, Any]], dict[str, str]]:
         """Fetch every non-deleted task across all projects.
 
+        Uses V2 (session) API when password auth is configured — a single
+        ``get_all_tasks()`` call.  Falls back to per-project V1 fetches for
+        OAuth auth.
+
         Returns:
             A 2-tuple of:
             - tasks: list of task dicts with ``deleted != 1`` entries removed.
             - project_map: mapping of ``project_id -> project_name``.
         """
+        if self._use_v2_tasks:
+            return await self._get_all_tasks_v2()
+        return await self._get_all_tasks_v1()
+
+    async def _get_all_tasks_v2(self) -> tuple[list[dict[str, Any]], dict[str, str]]:
+        """V2 path: single SDK call, then fetch projects for the map."""
+        raw_tasks = await self._client.get_all_tasks_v2()
+        projects = await self._client.get_projects()
+        project_map: dict[str, str] = {p["id"]: p["name"] for p in projects}
+        tasks = [t for t in raw_tasks if not t.get("deleted")]
+        return tasks, project_map
+
+    async def _get_all_tasks_v1(self) -> tuple[list[dict[str, Any]], dict[str, str]]:
+        """V1 path: per-project fetches (original implementation)."""
         projects = await self._client.get_projects()
         project_map: dict[str, str] = {p["id"]: p["name"] for p in projects}
 
@@ -191,7 +230,6 @@ class TickTickAPI:
 
         results = await asyncio.gather(*(_fetch_project(p) for p in projects))
         all_tasks = [t for batch in results for t in batch]
-
         return all_tasks, project_map
 
     async def create_task(self, fields: dict[str, Any]) -> dict[str, Any]:
