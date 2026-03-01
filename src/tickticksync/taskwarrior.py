@@ -1,0 +1,51 @@
+import subprocess
+from typing import Optional
+
+import tasklib
+
+
+class TaskWarriorClient:
+    def __init__(self, data_location: Optional[str] = None):
+        kwargs: dict = {}
+        if data_location:
+            kwargs["data_location"] = data_location
+        self._tw = tasklib.TaskWarrior(**kwargs)
+
+    def get_pending_tasks(self) -> list[dict]:
+        return [self._task_to_dict(t) for t in self._tw.tasks.filter(status="pending")]
+
+    def get_task_by_uuid(self, uuid: str) -> Optional[dict]:
+        tasks = self._tw.tasks.filter(uuid=uuid)
+        return self._task_to_dict(tasks[0]) if tasks else None
+
+    def create_task(self, fields: dict) -> str:
+        task = tasklib.Task(self._tw, **fields)
+        task.save()
+        return str(task["uuid"])
+
+    def update_task(self, uuid: str, fields: dict) -> None:
+        tasks = self._tw.tasks.filter(uuid=uuid)
+        if not tasks:
+            raise ValueError(f"Task {uuid} not found")
+        task = tasks[0]
+        for k, v in fields.items():
+            task[k] = v
+        task.save()
+
+    def complete_task(self, uuid: str) -> None:
+        tasks = self._tw.tasks.filter(uuid=uuid)
+        if tasks:
+            tasks[0].done()
+
+    def delete_task(self, uuid: str) -> None:
+        tasks = self._tw.tasks.filter(uuid=uuid)
+        if tasks:
+            tasks[0].delete()
+
+    def register_uda(self, name: str, type_: str, label: str) -> None:
+        subprocess.run(["task", "config", f"uda.{name}.type", type_], check=True)
+        subprocess.run(["task", "config", f"uda.{name}.label", label], check=True)
+
+    @staticmethod
+    def _task_to_dict(task: tasklib.Task) -> dict:
+        return dict(task)
