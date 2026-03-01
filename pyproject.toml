@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tickticksync"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "tasklib",
+    "click>=8.0",
+]
+
+[project.scripts]
+tickticksync = "tickticksync.cli:cli"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio",
+    "respx",
+]
