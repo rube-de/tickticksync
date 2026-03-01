@@ -99,5 +99,4 @@ def test_register_uda_calls_subprocess(mock_tw):
     assert mock_sub.run.call_count == 2
     first_call_args = mock_sub.run.call_args_list[0][0][0]
     assert "rc.confirmation:off" in first_call_args
-    assert "capture_output" in mock_sub.run.call_args_list[0][1] or \
-           mock_sub.run.call_args_list[0][0]  # called with capture_output=True
+    assert mock_sub.run.call_args_list[0][1].get("capture_output") is True
