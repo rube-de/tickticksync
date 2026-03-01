@@ -9,6 +9,7 @@ requires-python = ">=3.11"
 dependencies = [
     "tasklib",
     "click>=8.0",
+    "ticktick-sdk>=0.4.3",
 ]
 
 [project.scripts]
