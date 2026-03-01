@@ -56,3 +56,48 @@ def test_delete_task_calls_delete(mock_tw):
     client = TaskWarriorClient()
     client.delete_task("uuid-1")
     mock_task.delete.assert_called_once()
+
+
+def test_complete_task_raises_on_missing(mock_tw):
+    warrior, _ = mock_tw
+    warrior.tasks.filter.return_value = []
+    client = TaskWarriorClient()
+    with pytest.raises(ValueError, match="not found"):
+        client.complete_task("no-such")
+
+
+def test_delete_task_raises_on_missing(mock_tw):
+    warrior, _ = mock_tw
+    warrior.tasks.filter.return_value = []
+    client = TaskWarriorClient()
+    with pytest.raises(ValueError, match="not found"):
+        client.delete_task("no-such")
+
+
+def test_get_task_by_uuid_found(mock_tw):
+    warrior, _ = mock_tw
+    mock_task = MagicMock()
+    mock_task.__iter__ = lambda self: iter([("uuid", "uuid-1"), ("description", "Test")])
+    warrior.tasks.filter.return_value = [mock_task]
+    client = TaskWarriorClient()
+    result = client.get_task_by_uuid("uuid-1")
+    assert result is not None
+
+
+def test_get_task_by_uuid_not_found(mock_tw):
+    warrior, _ = mock_tw
+    warrior.tasks.filter.return_value = []
+    client = TaskWarriorClient()
+    result = client.get_task_by_uuid("no-such")
+    assert result is None
+
+
+def test_register_uda_calls_subprocess(mock_tw):
+    with patch("tickticksync.taskwarrior.subprocess") as mock_sub:
+        client = TaskWarriorClient()
+        client.register_uda("ticktickid", "string", "TickTick ID")
+    assert mock_sub.run.call_count == 2
+    first_call_args = mock_sub.run.call_args_list[0][0][0]
+    assert "rc.confirmation:off" in first_call_args
+    assert "capture_output" in mock_sub.run.call_args_list[0][1] or \
+           mock_sub.run.call_args_list[0][0]  # called with capture_output=True

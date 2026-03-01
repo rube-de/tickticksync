@@ -34,17 +34,25 @@ class TaskWarriorClient:
 
     def complete_task(self, uuid: str) -> None:
         tasks = self._tw.tasks.filter(uuid=uuid)
-        if tasks:
-            tasks[0].done()
+        if not tasks:
+            raise ValueError(f"Task {uuid} not found")
+        tasks[0].done()
 
     def delete_task(self, uuid: str) -> None:
         tasks = self._tw.tasks.filter(uuid=uuid)
-        if tasks:
-            tasks[0].delete()
+        if not tasks:
+            raise ValueError(f"Task {uuid} not found")
+        tasks[0].delete()
 
     def register_uda(self, name: str, type_: str, label: str) -> None:
-        subprocess.run(["task", "config", f"uda.{name}.type", type_], check=True)
-        subprocess.run(["task", "config", f"uda.{name}.label", label], check=True)
+        subprocess.run(
+            ["task", "rc.confirmation:off", "config", f"uda.{name}.type", type_],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["task", "rc.confirmation:off", "config", f"uda.{name}.label", label],
+            check=True, capture_output=True,
+        )
 
     @staticmethod
     def _task_to_dict(task: tasklib.Task) -> dict:
