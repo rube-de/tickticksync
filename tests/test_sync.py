@@ -85,3 +85,80 @@ def test_deleted_tt_task_not_detected_as_new(engine, store):
     tt_tasks = [{"id": "tt-del", "title": "Gone", "modifiedTime": "x", "deleted": 1}]
     changes = engine.detect_changes(tw_tasks, tt_tasks)
     assert not any(c.kind == "new_tt" for c in changes)
+
+
+@pytest.mark.asyncio
+async def test_apply_tw_only_pushes_to_ticktick(engine, store):
+    mapping = _mapping()
+    store.upsert_mapping(mapping)
+    change = SyncChange(
+        tw_task={"uuid": "uuid-1", "description": "Updated", "modified": "2024-06-01T00:00:00Z", "status": "pending"},
+        tt_task={"id": "tt-1", "projectId": "proj-1"},
+        mapping=mapping,
+        kind="tw_only",
+    )
+    project_map = {"proj-1": "Work"}
+    await engine.apply_changes([change], project_map)
+    engine.tt.update_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_tt_only_updates_tw(engine, store):
+    mapping = _mapping()
+    store.upsert_mapping(mapping)
+    change = SyncChange(
+        tw_task={"uuid": "uuid-1"},
+        tt_task={"id": "tt-1", "title": "Updated", "status": 0, "projectId": "proj-1", "modifiedTime": "2024-06-01T00:00:00Z"},
+        mapping=mapping,
+        kind="tt_only",
+    )
+    project_map = {"proj-1": "Work"}
+    await engine.apply_changes([change], project_map)
+    engine.tw.update_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_apply_conflict_tw_newer_wins(engine, store):
+    """TW modified later -> TW wins -> push to TickTick."""
+    mapping = _mapping()
+    store.upsert_mapping(mapping)
+    change = SyncChange(
+        tw_task={"uuid": "uuid-1", "description": "TW version", "modified": "2024-06-02T00:00:00Z", "status": "pending"},
+        tt_task={"id": "tt-1", "title": "TT version", "modifiedTime": "2024-06-01T00:00:00Z", "projectId": "proj-1"},
+        mapping=mapping,
+        kind="conflict",
+    )
+    project_map = {"proj-1": "Work"}
+    await engine.apply_changes([change], project_map)
+    engine.tt.update_task.assert_called_once()
+    engine.tw.update_task.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_apply_new_tw_creates_in_ticktick(engine, store):
+    engine.tt.create_task.return_value = {"id": "tt-new", "projectId": "proj-1", "modifiedTime": "x"}
+    change = SyncChange(
+        tw_task={"uuid": "uuid-new", "description": "New", "modified": "2024-06-01T00:00:00Z", "status": "pending"},
+        tt_task=None,
+        mapping=None,
+        kind="new_tw",
+    )
+    project_map = {"proj-1": "Work"}
+    await engine.apply_changes([change], project_map)
+    engine.tt.create_task.assert_called_once()
+    assert store.get_by_tw_uuid("uuid-new") is not None
+
+
+@pytest.mark.asyncio
+async def test_apply_new_tt_creates_in_tw(engine, store):
+    engine.tw.create_task.return_value = "uuid-created"
+    change = SyncChange(
+        tw_task=None,
+        tt_task={"id": "tt-new", "title": "New", "status": 0, "projectId": "proj-1", "modifiedTime": "2024-06-01T00:00:00Z"},
+        mapping=None,
+        kind="new_tt",
+    )
+    project_map = {"proj-1": "Work"}
+    await engine.apply_changes([change], project_map)
+    engine.tw.create_task.assert_called_once()
+    assert store.get_by_ticktick_id("tt-new") is not None

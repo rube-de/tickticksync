@@ -1,6 +1,8 @@
+import time
 from dataclasses import dataclass
 from typing import Optional
 
+from .mapper import ticktick_task_to_tw, tw_task_to_ticktick
 from .state import StateStore, TaskMapping
 from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
@@ -54,3 +56,77 @@ class SyncEngine:
                 changes.append(SyncChange(None, tt_task, None, "new_tt"))
 
         return changes
+
+    async def apply_changes(
+        self, changes: list[SyncChange], project_map: dict[str, str]
+    ) -> None:
+        for change in changes:
+            match change.kind:
+                case "tw_only":
+                    await self._push_tw_to_tt(change, project_map)
+                case "tt_only":
+                    await self._push_tt_to_tw(change, project_map)
+                case "conflict":
+                    await self._resolve_conflict(change, project_map)
+                case "new_tw":
+                    await self._create_in_tt(change, project_map)
+                case "new_tt":
+                    await self._create_in_tw(change, project_map)
+
+    async def _push_tw_to_tt(self, change: SyncChange, project_map: dict) -> None:
+        tt_fields = tw_task_to_ticktick(change.tw_task, change.mapping.ticktick_project)
+        await self.tt.update_task(
+            change.mapping.ticktick_id, change.mapping.ticktick_project, tt_fields
+        )
+        self._update_mapping_timestamps(change)
+
+    async def _push_tt_to_tw(self, change: SyncChange, project_map: dict) -> None:
+        project_name = project_map.get(change.tt_task.get("projectId", ""), "")
+        tw_fields = ticktick_task_to_tw(change.tt_task, project_name)
+        self.tw.update_task(str(change.tw_task["uuid"]), tw_fields)
+        self._update_mapping_timestamps(change)
+
+    async def _resolve_conflict(self, change: SyncChange, project_map: dict) -> None:
+        tw_mod = change.tw_task.get("modified", "")
+        tt_mod = change.tt_task.get("modifiedTime", "")
+        if tw_mod >= tt_mod:
+            await self._push_tw_to_tt(change, project_map)
+        else:
+            await self._push_tt_to_tw(change, project_map)
+
+    async def _create_in_tt(self, change: SyncChange, project_map: dict) -> None:
+        project_id = next(
+            (pid for pid, name in project_map.items() if name.lower() == "inbox"),
+            next(iter(project_map), ""),
+        )
+        tt_fields = tw_task_to_ticktick(change.tw_task, project_id)
+        created = await self.tt.create_task(tt_fields)
+        self.store.upsert_mapping(TaskMapping(
+            tw_uuid=str(change.tw_task["uuid"]),
+            ticktick_id=created["id"],
+            ticktick_project=created.get("projectId", project_id),
+            last_sync_ts=time.time(),
+            tw_modified=change.tw_task.get("modified"),
+            ticktick_modified=created.get("modifiedTime"),
+        ))
+
+    async def _create_in_tw(self, change: SyncChange, project_map: dict) -> None:
+        project_name = project_map.get(change.tt_task.get("projectId", ""), "")
+        tw_fields = ticktick_task_to_tw(change.tt_task, project_name)
+        new_uuid = self.tw.create_task(tw_fields)
+        self.store.upsert_mapping(TaskMapping(
+            tw_uuid=new_uuid,
+            ticktick_id=change.tt_task["id"],
+            ticktick_project=change.tt_task.get("projectId", ""),
+            last_sync_ts=time.time(),
+            tw_modified=None,
+            ticktick_modified=change.tt_task.get("modifiedTime"),
+        ))
+
+    def _update_mapping_timestamps(self, change: SyncChange) -> None:
+        if not change.mapping:
+            return
+        change.mapping.last_sync_ts = time.time()
+        change.mapping.tw_modified = change.tw_task.get("modified") if change.tw_task else None
+        change.mapping.ticktick_modified = change.tt_task.get("modifiedTime") if change.tt_task else None
+        self.store.upsert_mapping(change.mapping)
