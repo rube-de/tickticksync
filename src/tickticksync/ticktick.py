@@ -102,17 +102,27 @@ class TickTickClient:
 
     async def create_task(self, fields: dict[str, Any]) -> dict[str, Any]:
         """Create a task from a plain-dict payload and return the created task."""
-        # The real SDK create_task takes keyword args; unpack the fields dict.
+        fields = dict(fields)  # prevent mutating caller's dict
         title = fields.pop("title", "")
         project_id = fields.pop("projectId", None) or fields.pop("project_id", None)
-        task = await self._real.create_task(title, project_id, **fields)
+        # Only pass title and project_id; the SDK's create_task does not accept
+        # camelCase keys (dueDate, startDate, etc.) that callers may include.
+        # TODO: follow up with update_task if additional fields need to be set.
+        task = await self._real.create_task(title=title, project_id=project_id)
         return _to_dict(task)
 
     async def update_task(
         self, task_id: str, project_id: str, fields: dict[str, Any]
     ) -> dict[str, Any]:
         """Update a task identified by *task_id* / *project_id* with *fields*."""
-        task = _sdk.Task(id=task_id, projectId=project_id, **fields)
+        # Strip id/projectId from fields to avoid duplicate-keyword TypeError
+        # when constructing the Task model (those values come from the explicit args).
+        safe_fields = {
+            k: v
+            for k, v in fields.items()
+            if k not in ("id", "projectId", "project_id")
+        }
+        task = _sdk.Task(id=task_id, projectId=project_id, **safe_fields)
         updated = await self._real.update_task(task)
         return _to_dict(updated)
 

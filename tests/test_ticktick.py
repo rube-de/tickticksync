@@ -5,7 +5,7 @@ Import path: from ticktick_sdk import TickTickClient
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from tickticksync.ticktick import TickTickAPI
 
@@ -65,3 +65,46 @@ async def test_create_task(mock_sdk):
     result = await api.create_task({"title": "Buy milk", "projectId": "p1"})
     assert result["id"] == "new-1"
     mock_sdk.create_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_task_does_not_mutate_input(mock_sdk):
+    mock_sdk.create_task.return_value = {"id": "new-1", "title": "Test"}
+    api = TickTickAPI("id", "secret", "/tmp/token.json")
+    original = {"title": "Test", "projectId": "p1", "dueDate": "2024-06-01"}
+    original_copy = dict(original)
+    await api.create_task(original)
+    assert original == original_copy  # must not be mutated
+
+
+@pytest.mark.asyncio
+async def test_update_task(mock_sdk):
+    mock_sdk.update_task.return_value = {"id": "t1", "title": "Updated"}
+    api = TickTickAPI("id", "secret", "/tmp/token.json")
+    result = await api.update_task("t1", "proj-1", {"title": "Updated"})
+    assert result["id"] == "t1"
+    mock_sdk.update_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_update_task_strips_id_fields(mock_sdk):
+    """Fields dict containing 'id' or 'projectId' must not cause TypeError."""
+    mock_sdk.update_task.return_value = {"id": "t1", "title": "Updated"}
+    api = TickTickAPI("id", "secret", "/tmp/token.json")
+    # passing id and projectId inside fields should not raise
+    await api.update_task("t1", "proj-1", {"id": "t1", "projectId": "proj-1", "title": "Updated"})
+    mock_sdk.update_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_task(mock_sdk):
+    api = TickTickAPI("id", "secret", "/tmp/token.json")
+    await api.delete_task("tt-1", "proj-1")
+    mock_sdk.delete_task.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_complete_task(mock_sdk):
+    api = TickTickAPI("id", "secret", "/tmp/token.json")
+    await api.complete_task("tt-1", "proj-1")
+    mock_sdk.complete_task.assert_called_once()
