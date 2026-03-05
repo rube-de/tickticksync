@@ -1,7 +1,7 @@
 # tests/test_config.py
 import pytest
 from pathlib import Path
-from tickticksync.config import load_config, save_config_auth, Config, SyncConfig, MappingConfig
+from tickticksync.config import load_config, save_config_auth, Config, SyncConfig, MappingConfig, ProjectMapping
 
 
 def test_load_minimal_config(tmp_config):
@@ -95,3 +95,15 @@ def test_load_config_invalid_auth_method(tmp_path):
     )
     with pytest.raises(ValueError, match="Invalid auth.method"):
         load_config(cfg_path)
+
+
+def test_project_mapping_fields():
+    pm = ProjectMapping(ticktick="Inbox", taskwarrior="inbox")
+    assert pm.ticktick == "Inbox"
+    assert pm.taskwarrior == "inbox"
+
+
+def test_mapping_config_projects_default():
+    mc = MappingConfig()
+    assert mc.projects == []
+    assert isinstance(mc.projects, list)

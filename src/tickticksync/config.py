@@ -23,8 +23,15 @@ class SyncConfig:
 
 
 @dataclass
+class ProjectMapping:
+    ticktick: str
+    taskwarrior: str
+
+
+@dataclass
 class MappingConfig:
     default_project: str = "inbox"
+    projects: list[ProjectMapping] = field(default_factory=list)
 
 
 AuthMethod = Literal["oauth", "password"]
