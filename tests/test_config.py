@@ -1,7 +1,7 @@
 # tests/test_config.py
 import pytest
 from pathlib import Path
-from tickticksync.config import load_config, Config, SyncConfig, MappingConfig
+from tickticksync.config import load_config, save_config_auth, Config, SyncConfig, MappingConfig
 
 
 def test_load_minimal_config(tmp_config):
@@ -40,3 +40,48 @@ poll_interval = 30
 """)
     cfg = load_config(cfg_path)
     assert cfg.sync.poll_interval == 30
+
+
+def test_save_config_auth_oauth(tmp_config):
+    save_config_auth(tmp_config, "oauth")
+    cfg = load_config(tmp_config)
+    assert cfg.auth.method == "oauth"
+    assert cfg.auth.username is None
+
+
+def test_save_config_auth_password_with_username(tmp_config):
+    save_config_auth(tmp_config, "password", "user@example.com")
+    cfg = load_config(tmp_config)
+    assert cfg.auth.method == "password"
+    assert cfg.auth.username == "user@example.com"
+
+
+def test_save_config_auth_preserves_other_sections(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        '[ticktick]\nclient_id = "id"\nclient_secret = "secret"\n\n'
+        "[sync]\npoll_interval = 120\n"
+    )
+    save_config_auth(cfg_path, "password", "me@example.com")
+    cfg = load_config(cfg_path)
+    assert cfg.sync.poll_interval == 120
+    assert cfg.auth.method == "password"
+    assert cfg.auth.username == "me@example.com"
+
+
+def test_save_config_auth_creates_auth_from_scratch(tmp_path):
+    cfg_path = tmp_path / "missing.toml"
+    save_config_auth(cfg_path, "oauth")
+    text = cfg_path.read_text()
+    assert "oauth" in text
+
+
+def test_load_config_with_auth_section(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        '[ticktick]\nclient_id = "id"\nclient_secret = "secret"\n\n'
+        '[auth]\nmethod = "password"\nusername = "u@e.com"\n'
+    )
+    cfg = load_config(cfg_path)
+    assert cfg.auth.method == "password"
+    assert cfg.auth.username == "u@e.com"

@@ -14,7 +14,7 @@ import keyring
 import keyring.errors
 from ticktick_sdk.auth_cli import OAuth2Handler
 
-from .config import DEFAULT_CONFIG_PATH, AuthConfig, Config, load_config, save_config_auth
+from .config import DEFAULT_CONFIG_PATH, Config, load_config, save_config_auth
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
@@ -107,7 +107,12 @@ def auth_oauth() -> None:
 
     class _CallbackHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
-            params = parse_qs(urlparse(self.path).query)
+            parsed = urlparse(self.path)
+            if not parsed.path.startswith("/callback"):
+                self.send_response(404)
+                self.end_headers()
+                return
+            params = parse_qs(parsed.query)
             captured["code"] = params.get("code", [""])[0]
             captured["state"] = params.get("state", [""])[0]
             self.send_response(200)
@@ -129,11 +134,15 @@ def auth_oauth() -> None:
     if not received or not captured.get("code"):
         raise click.ClickException("No OAuth code received within 5 minutes.")
 
+    if captured.get("state") != state:
+        raise click.ClickException("Invalid OAuth state received; please retry authentication.")
+
     token = asyncio.run(handler.exchange_code(captured["code"], captured["state"]))
 
     token_path = cfg.token_path
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(json.dumps({"access_token": token.access_token}))
+    token_path.chmod(0o600)
     click.echo(f"Token saved to {token_path}")
 
     save_config_auth(config_path, "oauth")

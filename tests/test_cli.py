@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 from tickticksync.cli import cli
 from tickticksync.config import Config, TickTickConfig
