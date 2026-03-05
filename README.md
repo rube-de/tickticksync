@@ -12,8 +12,38 @@ A background daemon listens for TaskWarrior hook events (push path) and polls th
 
 ## Install
 
+### Global install (recommended for CLI usage)
+
 ```bash
-uv sync
+# Using uv (recommended)
+uv tool install tickticksync
+
+# Using pipx
+pipx install tickticksync
+```
+
+### Project dependency
+
+```bash
+# Using uv
+uv add tickticksync
+
+# Using pip
+pip install tickticksync
+```
+
+### From GitHub (latest development version)
+
+```bash
+uv pip install git+https://github.com/rube-de/tickticksync.git
+```
+
+### Development
+
+```bash
+git clone https://github.com/rube-de/tickticksync.git
+cd tickticksync
+uv sync --dev
 ```
 
 ## Setup
