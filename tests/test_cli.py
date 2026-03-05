@@ -243,3 +243,64 @@ def test_mapping_add_non_interactive_duplicate(runner, tmp_path):
         )
     assert result.exit_code != 0
     assert "already mapped" in result.output.lower()
+
+
+def test_mapping_add_interactive(runner, tmp_path):
+    """Interactive mapping add fetches projects, shows unmapped, prompts user."""
+    from unittest.mock import AsyncMock
+
+    config_path, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Inbox", taskwarrior="inbox")]
+
+    mock_api = MagicMock()
+    mock_api.connect = AsyncMock()
+    mock_api.disconnect = AsyncMock()
+    mock_api.get_projects = AsyncMock(return_value=[
+        {"id": "1", "name": "Inbox"},
+        {"id": "2", "name": "Personal"},
+        {"id": "3", "name": "Shopping"},
+    ])
+
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_mapping") as mock_save,
+        patch("tickticksync.cli._build_api", return_value=mock_api),
+    ):
+        # Select project 1 (Personal), accept default TW name
+        result = runner.invoke(cli, ["mapping", "add"], input="1\n\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Personal" in result.output
+    saved = mock_save.call_args[0][1]
+    new_mappings = [p for p in saved if p.ticktick == "Personal"]
+    assert len(new_mappings) == 1
+    assert new_mappings[0].taskwarrior == "personal"
+
+
+def test_mapping_add_interactive_no_unmapped(runner, tmp_path):
+    """When all projects are already mapped, show a message."""
+    from unittest.mock import AsyncMock
+
+    _, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [
+        ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
+        ProjectMapping(ticktick="Work", taskwarrior="work"),
+    ]
+
+    mock_api = MagicMock()
+    mock_api.connect = AsyncMock()
+    mock_api.disconnect = AsyncMock()
+    mock_api.get_projects = AsyncMock(return_value=[
+        {"id": "1", "name": "Inbox"},
+        {"id": "2", "name": "Work"},
+    ])
+
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli._build_api", return_value=mock_api),
+    ):
+        result = runner.invoke(cli, ["mapping", "add"])
+
+    assert result.exit_code == 0
+    assert "all projects are already mapped" in result.output.lower()
