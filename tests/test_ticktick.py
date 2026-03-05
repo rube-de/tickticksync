@@ -108,3 +108,41 @@ async def test_complete_task(mock_sdk):
     api = TickTickAPI("id", "secret", "/tmp/token.json")
     await api.complete_task("tt-1", "proj-1")
     mock_sdk.complete_task.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# V2 (password auth) path
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_all_tasks_v2_path(mock_sdk):
+    """When username is set, get_all_tasks() uses V2 single-call path."""
+    mock_sdk.get_all_tasks_v2.return_value = [
+        {"id": "t1", "title": "V2 Task", "deleted": 0},
+        {"id": "t2", "title": "Deleted V2", "deleted": 1},
+    ]
+    mock_sdk.get_projects.return_value = [{"id": "p1", "name": "Work"}]
+
+    api = TickTickAPI("id", "secret", "/tmp/token.json", username="user@example.com", password="pw")
+    tasks, project_map = await api.get_all_tasks()
+
+    mock_sdk.get_all_tasks_v2.assert_called_once()
+    # per-project fetch must NOT be called on V2 path
+    mock_sdk.get_project_data.assert_not_called()
+    assert len(tasks) == 1
+    assert tasks[0]["id"] == "t1"
+    assert project_map["p1"] == "Work"
+
+
+@pytest.mark.asyncio
+async def test_get_all_tasks_v1_path_unchanged(mock_sdk):
+    """Without username, get_all_tasks() still uses V1 per-project path."""
+    mock_sdk.get_projects.return_value = [{"id": "p1", "name": "Work"}]
+    mock_sdk.get_project_data.return_value = {"tasks": [{"id": "t1", "deleted": 0}]}
+
+    api = TickTickAPI("id", "secret", "/tmp/token.json")
+    tasks, _ = await api.get_all_tasks()
+
+    mock_sdk.get_all_tasks_v2.assert_not_called()
+    mock_sdk.get_project_data.assert_called_once_with("p1")
+    assert len(tasks) == 1

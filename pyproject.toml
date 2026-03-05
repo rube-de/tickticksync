@@ -10,6 +10,8 @@ dependencies = [
     "tasklib",
     "click>=8.0",
     "ticktick-sdk>=0.4.3",
+    "keyring>=25.7.0",
+    "tomlkit>=0.14.0",
 ]
 
 [project.scripts]

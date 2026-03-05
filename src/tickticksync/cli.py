@@ -1,12 +1,20 @@
 import asyncio
+import http.server
+import json
 import os
 import signal
+import threading
 import time
+import webbrowser
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import click
+import keyring
+import keyring.errors
+from ticktick_sdk.auth_cli import OAuth2Handler
 
-from .config import Config, load_config
+from .config import DEFAULT_CONFIG_PATH, Config, load_config, save_config_auth
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
@@ -17,12 +25,36 @@ PID_FILE = Path("~/.local/share/tickticksync/tickticksync.pid").expanduser()
 HOOKS_DIR = Path("~/.local/share/task/hooks").expanduser()
 
 
+_KEYRING_SERVICE = "tickticksync"
+
+
 def _build_engine(cfg: Config) -> SyncEngine:
     state = StateStore(cfg.db_path)
     tw = TaskWarriorClient()
-    tt = TickTickAPI(
-        cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path)
-    )
+
+    api_args = (cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path))
+
+    if cfg.auth.method == "password":
+        username = cfg.auth.username
+        if not username:
+            raise click.ClickException(
+                "No username configured. Run `tickticksync auth password`."
+            )
+        try:
+            password = keyring.get_password(_KEYRING_SERVICE, username)
+        except keyring.errors.NoKeyringError:
+            raise click.ClickException(
+                "No system keyring available. Run `tickticksync auth password` on a"
+                " machine with a keyring (macOS Keychain or Linux Secret Service)."
+            )
+        if not password:
+            raise click.ClickException(
+                f"No stored password for {username!r}. Run `tickticksync auth password`."
+            )
+        tt = TickTickAPI(*api_args, username=username, password=password)
+    else:
+        tt = TickTickAPI(*api_args)
+
     return SyncEngine(
         store=state, tw=tw, tt=tt, default_project=cfg.mapping.default_project
     )
@@ -46,6 +78,103 @@ def _read_pid() -> int | None:
 def cli() -> None:
     """TickTick <-> TaskWarrior bidirectional sync."""
 
+
+# ---------------------------------------------------------------------------
+# auth group
+# ---------------------------------------------------------------------------
+
+@cli.group()
+def auth() -> None:
+    """Authenticate with TickTick (OAuth or password)."""
+
+
+@auth.command("oauth")
+def auth_oauth() -> None:
+    """Run the browser OAuth2 flow and save the access token."""
+    config_path = DEFAULT_CONFIG_PATH
+    cfg = load_config(config_path)
+
+    redirect_uri = "http://localhost:8080/callback"
+    handler = OAuth2Handler(cfg.ticktick.client_id, cfg.ticktick.client_secret, redirect_uri)
+    auth_url, state = handler.get_authorization_url()
+
+    click.echo(f"\nOpen this URL in your browser:\n\n  {auth_url}\n")
+    webbrowser.open(auth_url)
+
+    # Capture the callback on localhost:8080
+    captured: dict[str, str] = {}
+    done = threading.Event()
+
+    class _CallbackHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if not parsed.path.startswith("/callback"):
+                self.send_response(404)
+                self.end_headers()
+                return
+            params = parse_qs(parsed.query)
+            captured["code"] = params.get("code", [""])[0]
+            captured["state"] = params.get("state", [""])[0]
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Auth complete. You can close this tab.")
+            done.set()
+
+        def log_message(self, *_: object) -> None:  # suppress access logs
+            pass
+
+    server = http.server.HTTPServer(("localhost", 8080), _CallbackHandler)
+    click.echo("Waiting for OAuth callback on http://localhost:8080 …")
+    server_thread = threading.Thread(target=server.serve_forever)
+    server_thread.daemon = True
+    server_thread.start()
+    received = done.wait(timeout=300)
+    server.shutdown()
+
+    if not received or not captured.get("code"):
+        raise click.ClickException("No OAuth code received within 5 minutes.")
+
+    if captured.get("state") != state:
+        raise click.ClickException("Invalid OAuth state received; please retry authentication.")
+
+    token = asyncio.run(handler.exchange_code(captured["code"], captured["state"]))
+
+    token_path = cfg.token_path
+    token_path.parent.mkdir(parents=True, exist_ok=True)
+    token_path.write_text(json.dumps({"access_token": token.access_token}))
+    token_path.chmod(0o600)
+    click.echo(f"Token saved to {token_path}")
+
+    save_config_auth(config_path, "oauth")
+    click.echo("Auth method set to 'oauth' in config.")
+
+
+@auth.command("password")
+def auth_password() -> None:
+    """Store TickTick username/password credentials in the system keyring."""
+    config_path = DEFAULT_CONFIG_PATH
+    load_config(config_path)  # validate config exists and is parseable
+
+    username = click.prompt("TickTick username (email)")
+    password = click.prompt("TickTick password", hide_input=True)
+
+    try:
+        keyring.set_password(_KEYRING_SERVICE, username, password)
+    except keyring.errors.NoKeyringError:
+        raise click.ClickException(
+            "No system keyring available. Install a keyring backend"
+            " (e.g. `uv add keyrings.alt`) or run on macOS/Linux with a"
+            " Secret Service daemon."
+        )
+
+    save_config_auth(config_path, "password", username)
+    click.echo(f"Password stored in keyring for {username!r}.")
+    click.echo("Auth method set to 'password' in config.")
+
+
+# ---------------------------------------------------------------------------
+# init
+# ---------------------------------------------------------------------------
 
 @cli.command()
 def init() -> None:
