@@ -152,6 +152,10 @@ class TickTickAPI:
         client_id: OAuth2 client ID from the TickTick developer portal.
         client_secret: OAuth2 client secret.
         token_path: Path to a JSON file where the OAuth token is persisted.
+        username: TickTick username for password-based auth.
+        password: TickTick password for password-based auth.
+        use_v2_tasks: If True, fetch tasks via the V2 (session) API in a
+            single call.  If False (default), use per-project V1 fetches.
     """
 
     def __init__(
@@ -189,9 +193,9 @@ class TickTickAPI:
     async def get_all_tasks(self) -> tuple[list[dict[str, Any]], dict[str, str]]:
         """Fetch every non-deleted task across all projects.
 
-        Uses V2 (session) API when password auth is configured — a single
-        ``get_all_tasks()`` call.  Falls back to per-project V1 fetches for
-        OAuth auth.
+        Uses V2 (session) API when ``use_v2_tasks`` is True — a single
+        ``get_all_tasks()`` call.  Falls back to per-project V1 fetches
+        otherwise.
 
         Returns:
             A 2-tuple of:

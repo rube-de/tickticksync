@@ -85,3 +85,13 @@ def test_load_config_with_auth_section(tmp_path):
     cfg = load_config(cfg_path)
     assert cfg.auth.method == "password"
     assert cfg.auth.username == "u@e.com"
+
+
+def test_load_config_invalid_auth_method(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        '[ticktick]\nclient_id = "id"\nclient_secret = "secret"\n\n'
+        '[auth]\nmethod = "oath"\n'
+    )
+    with pytest.raises(ValueError, match="Invalid auth.method"):
+        load_config(cfg_path)
