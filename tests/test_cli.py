@@ -175,3 +175,37 @@ def test_mapping_list_empty(runner, tmp_path):
         result = runner.invoke(cli, ["mapping", "list"])
     assert result.exit_code == 0
     assert "No project mappings configured" in result.output
+
+
+# ---------------------------------------------------------------------------
+# mapping remove
+# ---------------------------------------------------------------------------
+
+def test_mapping_remove_existing(runner, tmp_path):
+    """mapping remove deletes a mapping and persists the change."""
+    config_path, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [
+        ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
+        ProjectMapping(ticktick="Work", taskwarrior="work"),
+    ]
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_mapping") as mock_save,
+    ):
+        result = runner.invoke(cli, ["mapping", "remove", "Work"])
+    assert result.exit_code == 0
+    assert "Removed mapping" in result.output
+    assert "Work" in result.output
+    saved_projects = mock_save.call_args[0][1]
+    assert len(saved_projects) == 1
+    assert saved_projects[0].ticktick == "Inbox"
+
+
+def test_mapping_remove_nonexistent(runner, tmp_path):
+    """mapping remove for a non-existent mapping shows an error."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["mapping", "remove", "Nonexistent"])
+    assert result.exit_code != 0
+    assert "No mapping found" in result.output
