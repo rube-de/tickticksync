@@ -209,3 +209,37 @@ def test_mapping_remove_nonexistent(runner, tmp_path):
         result = runner.invoke(cli, ["mapping", "remove", "Nonexistent"])
     assert result.exit_code != 0
     assert "No mapping found" in result.output
+
+
+# ---------------------------------------------------------------------------
+# mapping add
+# ---------------------------------------------------------------------------
+
+def test_mapping_add_non_interactive(runner, tmp_path):
+    """mapping add --ticktick X --taskwarrior y adds the mapping."""
+    config_path, cfg = _make_cfg(tmp_path)
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_mapping") as mock_save,
+    ):
+        result = runner.invoke(
+            cli, ["mapping", "add", "--ticktick", "Work", "--taskwarrior", "work"]
+        )
+    assert result.exit_code == 0
+    assert "Work" in result.output
+    assert "work" in result.output
+    saved = mock_save.call_args[0][1]
+    assert any(p.ticktick == "Work" and p.taskwarrior == "work" for p in saved)
+
+
+def test_mapping_add_non_interactive_duplicate(runner, tmp_path):
+    """mapping add for an already-mapped TickTick project shows an error."""
+    _, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(
+            cli, ["mapping", "add", "--ticktick", "Work", "--taskwarrior", "other"]
+        )
+    assert result.exit_code != 0
+    assert "already mapped" in result.output.lower()
