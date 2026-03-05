@@ -208,3 +208,31 @@ taskwarrior = "old"
     cfg = load_config(cfg_path)
     assert len(cfg.mapping.projects) == 1
     assert cfg.mapping.projects[0].ticktick == "New"
+
+
+def test_load_config_duplicate_project_names(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text("""\
+[ticktick]
+client_id = "id"
+client_secret = "secret"
+
+[[mapping.projects]]
+ticktick = "Inbox"
+taskwarrior = "inbox"
+
+[[mapping.projects]]
+ticktick = "Inbox"
+taskwarrior = "inbox_dup"
+""")
+    cfg = load_config(cfg_path)
+    assert len(cfg.mapping.projects) == 2
+
+
+def test_save_config_mapping_creates_from_scratch(tmp_path):
+    cfg_path = tmp_path / "new.toml"
+    projects = [ProjectMapping(ticktick="Inbox", taskwarrior="inbox")]
+    save_config_mapping(cfg_path, projects)
+    text = cfg_path.read_text()
+    assert "ticktick" in text
+    assert "taskwarrior" in text
