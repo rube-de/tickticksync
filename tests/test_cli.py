@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 from tickticksync.cli import cli
-from tickticksync.config import Config, TickTickConfig
+from tickticksync.config import Config, ProjectMapping, TickTickConfig
 
 
 @pytest.fixture
@@ -146,3 +146,32 @@ def test_auth_oauth_timeout_exits_with_error(runner, tmp_path):
 
     assert result.exit_code == 1
     assert "No OAuth code" in result.output
+
+
+# ---------------------------------------------------------------------------
+# mapping list
+# ---------------------------------------------------------------------------
+
+def test_mapping_list_shows_table(runner, tmp_path):
+    """mapping list with configured projects shows a formatted table."""
+    config_path, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [
+        ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
+        ProjectMapping(ticktick="Work", taskwarrior="work"),
+    ]
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["mapping", "list"])
+    assert result.exit_code == 0
+    assert "Inbox" in result.output
+    assert "inbox" in result.output
+    assert "Work" in result.output
+    assert "2 mappings" in result.output
+
+
+def test_mapping_list_empty(runner, tmp_path):
+    """mapping list with no mappings shows a helpful message."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["mapping", "list"])
+    assert result.exit_code == 0
+    assert "No project mappings configured" in result.output
