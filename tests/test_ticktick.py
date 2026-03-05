@@ -123,7 +123,7 @@ async def test_get_all_tasks_v2_path(mock_sdk):
     ]
     mock_sdk.get_projects.return_value = [{"id": "p1", "name": "Work"}]
 
-    api = TickTickAPI("id", "secret", "/tmp/token.json", username="user@example.com", password="pw")
+    api = TickTickAPI("id", "secret", "/tmp/token.json", username="user@example.com", password="pw", use_v2_tasks=True)
     tasks, project_map = await api.get_all_tasks()
 
     mock_sdk.get_all_tasks_v2.assert_called_once()

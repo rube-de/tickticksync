@@ -50,7 +50,6 @@ class TickTickClient:
         client_secret: str,
         token_path: str,
         *,
-        v1_access_token: str | None = None,
         username: str | None = None,
         password: str | None = None,
     ) -> None:
@@ -61,11 +60,10 @@ class TickTickClient:
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             logger.debug("No usable token file at %s", token_path)
 
-        effective_token = v1_access_token or stored_token
         self._real = _RealTickTickClient(
             client_id=client_id,
             client_secret=client_secret,
-            v1_access_token=effective_token,
+            v1_access_token=stored_token,
             username=username,
             password=password,
         )
@@ -154,6 +152,10 @@ class TickTickAPI:
         client_id: OAuth2 client ID from the TickTick developer portal.
         client_secret: OAuth2 client secret.
         token_path: Path to a JSON file where the OAuth token is persisted.
+        username: TickTick username for password-based auth.
+        password: TickTick password for password-based auth.
+        use_v2_tasks: If True, fetch tasks via the V2 (session) API in a
+            single call.  If False (default), use per-project V1 fetches.
     """
 
     def __init__(
@@ -164,12 +166,13 @@ class TickTickAPI:
         *,
         username: str | None = None,
         password: str | None = None,
+        use_v2_tasks: bool = False,
     ) -> None:
         self._client = TickTickClient(
             client_id, client_secret, token_path,
             username=username, password=password,
         )
-        self._use_v2_tasks = username is not None
+        self._use_v2_tasks = use_v2_tasks
 
     async def connect(self) -> None:
         """Authenticate with TickTick."""
@@ -190,9 +193,9 @@ class TickTickAPI:
     async def get_all_tasks(self) -> tuple[list[dict[str, Any]], dict[str, str]]:
         """Fetch every non-deleted task across all projects.
 
-        Uses V2 (session) API when password auth is configured — a single
-        ``get_all_tasks()`` call.  Falls back to per-project V1 fetches for
-        OAuth auth.
+        Uses V2 (session) API when ``use_v2_tasks`` is True — a single
+        ``get_all_tasks()`` call.  Falls back to per-project V1 fetches
+        otherwise.
 
         Returns:
             A 2-tuple of:
