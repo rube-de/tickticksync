@@ -61,6 +61,31 @@ def _build_engine(cfg: Config) -> SyncEngine:
     )
 
 
+def _build_api(cfg: Config) -> TickTickAPI:
+    """Construct a TickTickAPI instance from config (no SyncEngine needed)."""
+    api_args = (cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path))
+
+    if cfg.auth.method == "password":
+        username = cfg.auth.username
+        if not username:
+            raise click.ClickException(
+                "No username configured. Run `tickticksync auth password`."
+            )
+        try:
+            password = keyring.get_password(_KEYRING_SERVICE, username)
+        except keyring.errors.NoKeyringError:
+            raise click.ClickException(
+                "No system keyring available. Run `tickticksync auth password` on a"
+                " machine with a keyring (macOS Keychain or Linux Secret Service)."
+            )
+        if not password:
+            raise click.ClickException(
+                f"No stored password for {username!r}. Run `tickticksync auth password`."
+            )
+        return TickTickAPI(*api_args, username=username, password=password)
+    return TickTickAPI(*api_args)
+
+
 def _read_pid() -> int | None:
     """Read PID from file and verify process exists. Cleans up stale files."""
     try:
@@ -355,8 +380,36 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
         click.echo(f'\u2713 Mapped "{ticktick}" \u2192 "{taskwarrior}"')
         return
 
-    # Interactive mode placeholder -- will be implemented in next task
-    raise click.ClickException(
-        "Interactive mode requires both TickTick API access. "
-        "Use --ticktick and --taskwarrior for non-interactive mode."
-    )
+    # Interactive mode — fetch projects from TickTick API
+    tt = _build_api(cfg)
+
+    async def _fetch() -> list[dict]:
+        await tt.connect()
+        try:
+            return await tt.get_projects()
+        finally:
+            await tt.disconnect()
+
+    click.echo("Fetching TickTick projects...")
+    all_projects = asyncio.run(_fetch())
+    unmapped = [p for p in all_projects if p["name"] not in mapped_names]
+
+    if not unmapped:
+        click.echo("All projects are already mapped.")
+        return
+
+    click.echo("\nUnmapped projects:")
+    for i, proj in enumerate(unmapped, 1):
+        click.echo(f"  {i}. {proj['name']}")
+
+    choice = click.prompt("\nSelect project", type=int, default=1)
+    if choice < 1 or choice > len(unmapped):
+        raise click.ClickException(f"Invalid selection: {choice}")
+
+    selected = unmapped[choice - 1]
+    default_tw = selected["name"].lower()
+    tw_name = click.prompt("TaskWarrior project name", default=default_tw)
+
+    updated = list(existing) + [ProjectMapping(ticktick=selected["name"], taskwarrior=tw_name)]
+    save_config_mapping(DEFAULT_CONFIG_PATH, updated)
+    click.echo(f'\n\u2713 Mapped "{selected["name"]}" \u2192 "{tw_name}"')
