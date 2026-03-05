@@ -50,7 +50,6 @@ class TickTickClient:
         client_secret: str,
         token_path: str,
         *,
-        v1_access_token: str | None = None,
         username: str | None = None,
         password: str | None = None,
     ) -> None:
@@ -61,11 +60,10 @@ class TickTickClient:
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             logger.debug("No usable token file at %s", token_path)
 
-        effective_token = v1_access_token or stored_token
         self._real = _RealTickTickClient(
             client_id=client_id,
             client_secret=client_secret,
-            v1_access_token=effective_token,
+            v1_access_token=stored_token,
             username=username,
             password=password,
         )
@@ -164,12 +162,13 @@ class TickTickAPI:
         *,
         username: str | None = None,
         password: str | None = None,
+        use_v2_tasks: bool = False,
     ) -> None:
         self._client = TickTickClient(
             client_id, client_secret, token_path,
             username=username, password=password,
         )
-        self._use_v2_tasks = username is not None
+        self._use_v2_tasks = use_v2_tasks
 
     async def connect(self) -> None:
         """Authenticate with TickTick."""

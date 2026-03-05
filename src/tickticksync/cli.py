@@ -26,6 +26,7 @@ HOOKS_DIR = Path("~/.local/share/task/hooks").expanduser()
 
 
 _KEYRING_SERVICE = "tickticksync"
+_OAUTH_REDIRECT_URI = "http://localhost:8080/callback"
 
 
 def _build_engine(cfg: Config) -> SyncEngine:
@@ -51,7 +52,7 @@ def _build_engine(cfg: Config) -> SyncEngine:
             raise click.ClickException(
                 f"No stored password for {username!r}. Run `tickticksync auth password`."
             )
-        tt = TickTickAPI(*api_args, username=username, password=password)
+        tt = TickTickAPI(*api_args, username=username, password=password, use_v2_tasks=True)
     else:
         tt = TickTickAPI(*api_args)
 
@@ -94,8 +95,8 @@ def auth_oauth() -> None:
     config_path = DEFAULT_CONFIG_PATH
     cfg = load_config(config_path)
 
-    redirect_uri = "http://localhost:8080/callback"
-    handler = OAuth2Handler(cfg.ticktick.client_id, cfg.ticktick.client_secret, redirect_uri)
+    parsed_redirect = urlparse(_OAUTH_REDIRECT_URI)
+    handler = OAuth2Handler(cfg.ticktick.client_id, cfg.ticktick.client_secret, _OAUTH_REDIRECT_URI)
     auth_url, state = handler.get_authorization_url()
 
     click.echo(f"\nOpen this URL in your browser:\n\n  {auth_url}\n")
@@ -108,7 +109,7 @@ def auth_oauth() -> None:
     class _CallbackHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
-            if not parsed.path.startswith("/callback"):
+            if not parsed.path.startswith(parsed_redirect.path):
                 self.send_response(404)
                 self.end_headers()
                 return
@@ -123,8 +124,8 @@ def auth_oauth() -> None:
         def log_message(self, *_: object) -> None:  # suppress access logs
             pass
 
-    server = http.server.HTTPServer(("localhost", 8080), _CallbackHandler)
-    click.echo("Waiting for OAuth callback on http://localhost:8080 …")
+    server = http.server.HTTPServer((parsed_redirect.hostname, parsed_redirect.port), _CallbackHandler)
+    click.echo(f"Waiting for OAuth callback on {_OAUTH_REDIRECT_URI} …")
     server_thread = threading.Thread(target=server.serve_forever)
     server_thread.daemon = True
     server_thread.start()
@@ -179,9 +180,8 @@ def auth_password() -> None:
 @cli.command()
 def init() -> None:
     """Set up OAuth credentials, register TW UDA, and install hooks."""
-    config_dir = Path("~/.config/tickticksync").expanduser()
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / "config.toml"
+    config_path = DEFAULT_CONFIG_PATH
+    config_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not config_path.exists():
         client_id = click.prompt("TickTick OAuth client_id")
