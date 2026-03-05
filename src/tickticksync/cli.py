@@ -14,7 +14,7 @@ import keyring
 import keyring.errors
 from ticktick_sdk.auth_cli import OAuth2Handler
 
-from .config import DEFAULT_CONFIG_PATH, Config, load_config, save_config_auth
+from .config import DEFAULT_CONFIG_PATH, Config, ProjectMapping, load_config, save_config_auth, save_config_mapping
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
@@ -298,3 +298,28 @@ def status() -> None:
     click.echo(f"Mapped tasks : {count}")
     click.echo(f"Last sync    : {last_poll_str}")
     state.close()
+
+
+# ---------------------------------------------------------------------------
+# mapping group
+# ---------------------------------------------------------------------------
+
+@cli.group()
+def mapping() -> None:
+    """Manage TickTick-to-TaskWarrior project mappings."""
+
+
+@mapping.command("list")
+def mapping_list() -> None:
+    """Display all configured project mappings."""
+    cfg = load_config()
+    projects = cfg.mapping.projects
+    if not projects:
+        click.echo("No project mappings configured.")
+        click.echo("Run `tickticksync mapping add` to create one.")
+        return
+    click.echo("TickTick Project    → TaskWarrior Project")
+    click.echo("─" * 41)
+    for pm in projects:
+        click.echo(f"{pm.ticktick:<20}→ {pm.taskwarrior}")
+    click.echo(f"({len(projects)} mapping{'s' if len(projects) != 1 else ''})")
