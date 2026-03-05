@@ -23,8 +23,15 @@ class SyncConfig:
 
 
 @dataclass
+class ProjectMapping:
+    ticktick: str
+    taskwarrior: str
+
+
+@dataclass
 class MappingConfig:
     default_project: str = "inbox"
+    projects: list[ProjectMapping] = field(default_factory=list)
 
 
 AuthMethod = Literal["oauth", "password"]
@@ -64,10 +71,21 @@ def load_config(path: Path | None = None) -> Config:
         raise ValueError(
             f"Invalid auth.method {method!r} in config; expected one of {_VALID_AUTH_METHODS}"
         )
+    mapping_data = data.get("mapping", {})
+    projects_raw = mapping_data.pop("projects", [])
+    projects: list[ProjectMapping] = []
+    for i, p in enumerate(projects_raw):
+        try:
+            projects.append(ProjectMapping(**p))
+        except TypeError as e:
+            raise ValueError(
+                f"Invalid mapping.projects[{i}] entry in config; expected keys "
+                f"'ticktick' and 'taskwarrior'; got {p!r}"
+            ) from e
     return Config(
         ticktick=TickTickConfig(**data["ticktick"]),
         sync=SyncConfig(**data.get("sync", {})),
-        mapping=MappingConfig(**data.get("mapping", {})),
+        mapping=MappingConfig(**mapping_data, projects=projects),
         auth=AuthConfig(**auth_data),
     )
 
@@ -88,3 +106,23 @@ def save_config_auth(path: Path, method: AuthMethod, username: str | None = None
         auth_table.add("username", username)
     doc["auth"] = auth_table
     path.write_text(tomlkit.dumps(doc))
+
+
+def save_config_mapping(path: Path, projects: list[ProjectMapping]) -> None:
+    """Write or overwrite [[mapping.projects]] in config, preserving other sections."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        text = ""
+    doc = tomlkit.parse(text)
+    if "mapping" not in doc:
+        doc.add("mapping", tomlkit.table())
+    aot = tomlkit.aot()
+    for pm in projects:
+        t = tomlkit.table()
+        t.add("ticktick", pm.ticktick)
+        t.add("taskwarrior", pm.taskwarrior)
+        aot.append(t)
+    doc["mapping"]["projects"] = aot
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
