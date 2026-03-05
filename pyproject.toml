@@ -6,6 +6,22 @@ build-backend = "hatchling.build"
 name = "tickticksync"
 version = "0.1.0"
 requires-python = ">=3.11"
+description = "Bidirectional sync between TickTick and TaskWarrior"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "rube-de" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Scheduling",
+]
 dependencies = [
     "tasklib",
     "click>=8.0",
@@ -16,6 +32,11 @@ dependencies = [
 
 [project.scripts]
 tickticksync = "tickticksync.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/rube-de/tickticksync"
+Repository = "https://github.com/rube-de/tickticksync"
+Issues = "https://github.com/rube-de/tickticksync/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
