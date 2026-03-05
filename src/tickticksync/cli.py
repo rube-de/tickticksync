@@ -323,3 +323,16 @@ def mapping_list() -> None:
     for pm in projects:
         click.echo(f"{pm.ticktick:<20}→ {pm.taskwarrior}")
     click.echo(f"({len(projects)} mapping{'s' if len(projects) != 1 else ''})")
+
+
+@mapping.command("remove")
+@click.argument("ticktick_project")
+def mapping_remove(ticktick_project: str) -> None:
+    """Remove a project mapping by TickTick project name."""
+    cfg = load_config()
+    projects = cfg.mapping.projects
+    updated = [p for p in projects if p.ticktick != ticktick_project]
+    if len(updated) == len(projects):
+        raise click.ClickException(f'No mapping found for "{ticktick_project}"')
+    save_config_mapping(DEFAULT_CONFIG_PATH, updated)
+    click.echo(f'\u2713 Removed mapping for "{ticktick_project}"')
