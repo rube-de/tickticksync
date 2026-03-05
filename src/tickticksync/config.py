@@ -73,7 +73,15 @@ def load_config(path: Path | None = None) -> Config:
         )
     mapping_data = data.get("mapping", {})
     projects_raw = mapping_data.pop("projects", [])
-    projects = [ProjectMapping(**p) for p in projects_raw]
+    projects: list[ProjectMapping] = []
+    for i, p in enumerate(projects_raw):
+        try:
+            projects.append(ProjectMapping(**p))
+        except TypeError as e:
+            raise ValueError(
+                f"Invalid mapping.projects[{i}] entry in config; expected keys "
+                f"'ticktick' and 'taskwarrior'; got {p!r}"
+            ) from e
     return Config(
         ticktick=TickTickConfig(**data["ticktick"]),
         sync=SyncConfig(**data.get("sync", {})),
@@ -103,7 +111,7 @@ def save_config_auth(path: Path, method: AuthMethod, username: str | None = None
 def save_config_mapping(path: Path, projects: list[ProjectMapping]) -> None:
     """Write or overwrite [[mapping.projects]] in config, preserving other sections."""
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         text = ""
     doc = tomlkit.parse(text)
@@ -116,4 +124,5 @@ def save_config_mapping(path: Path, projects: list[ProjectMapping]) -> None:
         t.add("taskwarrior", pm.taskwarrior)
         aot.append(t)
     doc["mapping"]["projects"] = aot
-    path.write_text(tomlkit.dumps(doc))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
