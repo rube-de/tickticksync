@@ -336,3 +336,27 @@ def mapping_remove(ticktick_project: str) -> None:
         raise click.ClickException(f'No mapping found for "{ticktick_project}"')
     save_config_mapping(DEFAULT_CONFIG_PATH, updated)
     click.echo(f'\u2713 Removed mapping for "{ticktick_project}"')
+
+
+@mapping.command("add")
+@click.option("--ticktick", default=None, help="TickTick project name")
+@click.option("--taskwarrior", default=None, help="TaskWarrior project name")
+def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
+    """Add a project mapping (interactive or via --ticktick/--taskwarrior)."""
+    cfg = load_config()
+    existing = cfg.mapping.projects
+    mapped_names = {p.ticktick for p in existing}
+
+    if ticktick and taskwarrior:
+        if ticktick in mapped_names:
+            raise click.ClickException(f'"{ticktick}" is already mapped.')
+        updated = list(existing) + [ProjectMapping(ticktick=ticktick, taskwarrior=taskwarrior)]
+        save_config_mapping(DEFAULT_CONFIG_PATH, updated)
+        click.echo(f'\u2713 Mapped "{ticktick}" \u2192 "{taskwarrior}"')
+        return
+
+    # Interactive mode placeholder -- will be implemented in next task
+    raise click.ClickException(
+        "Interactive mode requires both TickTick API access. "
+        "Use --ticktick and --taskwarrior for non-interactive mode."
+    )
