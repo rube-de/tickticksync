@@ -71,10 +71,13 @@ def load_config(path: Path | None = None) -> Config:
         raise ValueError(
             f"Invalid auth.method {method!r} in config; expected one of {_VALID_AUTH_METHODS}"
         )
+    mapping_data = data.get("mapping", {})
+    projects_raw = mapping_data.pop("projects", [])
+    projects = [ProjectMapping(**p) for p in projects_raw]
     return Config(
         ticktick=TickTickConfig(**data["ticktick"]),
         sync=SyncConfig(**data.get("sync", {})),
-        mapping=MappingConfig(**data.get("mapping", {})),
+        mapping=MappingConfig(**mapping_data, projects=projects),
         auth=AuthConfig(**auth_data),
     )
 

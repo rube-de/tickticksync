@@ -107,3 +107,34 @@ def test_mapping_config_projects_default():
     mc = MappingConfig()
     assert mc.projects == []
     assert isinstance(mc.projects, list)
+
+
+def test_load_config_with_project_mappings(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text("""\
+[ticktick]
+client_id = "id"
+client_secret = "secret"
+
+[mapping]
+default_project = "inbox"
+
+[[mapping.projects]]
+ticktick = "Inbox"
+taskwarrior = "inbox"
+
+[[mapping.projects]]
+ticktick = "Work"
+taskwarrior = "work"
+""")
+    cfg = load_config(cfg_path)
+    assert len(cfg.mapping.projects) == 2
+    assert cfg.mapping.projects[0].ticktick == "Inbox"
+    assert cfg.mapping.projects[0].taskwarrior == "inbox"
+    assert cfg.mapping.projects[1].ticktick == "Work"
+    assert cfg.mapping.projects[1].taskwarrior == "work"
+
+
+def test_load_config_without_project_mappings(tmp_config):
+    cfg = load_config(tmp_config)
+    assert cfg.mapping.projects == []
