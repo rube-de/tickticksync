@@ -98,3 +98,22 @@ def save_config_auth(path: Path, method: AuthMethod, username: str | None = None
         auth_table.add("username", username)
     doc["auth"] = auth_table
     path.write_text(tomlkit.dumps(doc))
+
+
+def save_config_mapping(path: Path, projects: list[ProjectMapping]) -> None:
+    """Write or overwrite [[mapping.projects]] in config, preserving other sections."""
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        text = ""
+    doc = tomlkit.parse(text)
+    if "mapping" not in doc:
+        doc.add("mapping", tomlkit.table())
+    aot = tomlkit.aot()
+    for pm in projects:
+        t = tomlkit.table()
+        t.add("ticktick", pm.ticktick)
+        t.add("taskwarrior", pm.taskwarrior)
+        aot.append(t)
+    doc["mapping"]["projects"] = aot
+    path.write_text(tomlkit.dumps(doc))

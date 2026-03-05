@@ -1,7 +1,7 @@
 # tests/test_config.py
 import pytest
 from pathlib import Path
-from tickticksync.config import load_config, save_config_auth, Config, SyncConfig, MappingConfig, ProjectMapping
+from tickticksync.config import load_config, save_config_auth, save_config_mapping, Config, SyncConfig, MappingConfig, ProjectMapping
 
 
 def test_load_minimal_config(tmp_config):
@@ -138,3 +138,73 @@ taskwarrior = "work"
 def test_load_config_without_project_mappings(tmp_config):
     cfg = load_config(tmp_config)
     assert cfg.mapping.projects == []
+
+
+def test_save_config_mapping_roundtrip(tmp_config):
+    projects = [
+        ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
+        ProjectMapping(ticktick="Work", taskwarrior="work"),
+    ]
+    save_config_mapping(tmp_config, projects)
+    cfg = load_config(tmp_config)
+    assert len(cfg.mapping.projects) == 2
+    assert cfg.mapping.projects[0].ticktick == "Inbox"
+    assert cfg.mapping.projects[1].taskwarrior == "work"
+
+
+def test_save_config_mapping_preserves_other_sections(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text("""\
+[ticktick]
+client_id = "id"
+client_secret = "secret"
+
+[sync]
+poll_interval = 120
+
+[auth]
+method = "password"
+username = "me@example.com"
+""")
+    projects = [ProjectMapping(ticktick="Inbox", taskwarrior="inbox")]
+    save_config_mapping(cfg_path, projects)
+    cfg = load_config(cfg_path)
+    assert cfg.ticktick.client_id == "id"
+    assert cfg.sync.poll_interval == 120
+    assert cfg.auth.method == "password"
+    assert cfg.auth.username == "me@example.com"
+    assert len(cfg.mapping.projects) == 1
+
+
+def test_save_config_mapping_empty_list(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text("""\
+[ticktick]
+client_id = "id"
+client_secret = "secret"
+
+[[mapping.projects]]
+ticktick = "Old"
+taskwarrior = "old"
+""")
+    save_config_mapping(cfg_path, [])
+    cfg = load_config(cfg_path)
+    assert cfg.mapping.projects == []
+
+
+def test_save_config_mapping_overwrites_existing(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text("""\
+[ticktick]
+client_id = "id"
+client_secret = "secret"
+
+[[mapping.projects]]
+ticktick = "Old"
+taskwarrior = "old"
+""")
+    projects = [ProjectMapping(ticktick="New", taskwarrior="new")]
+    save_config_mapping(cfg_path, projects)
+    cfg = load_config(cfg_path)
+    assert len(cfg.mapping.projects) == 1
+    assert cfg.mapping.projects[0].ticktick == "New"
