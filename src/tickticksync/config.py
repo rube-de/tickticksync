@@ -141,3 +141,48 @@ def save_config_sync(path: Path, poll_interval: int, socket_path: str) -> None:
     doc["sync"] = sync_table
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+
+def save_config_full(
+    path: Path,
+    *,
+    client_id: str,
+    client_secret: str,
+    auth_method: AuthMethod,
+    poll_interval: int,
+    socket_path: str,
+    projects: list[ProjectMapping],
+    auth_username: str | None = None,
+) -> None:
+    """Write a complete config file with all sections."""
+    doc = tomlkit.document()
+
+    tt_table = tomlkit.table()
+    tt_table.add("client_id", client_id)
+    tt_table.add("client_secret", client_secret)
+    doc.add("ticktick", tt_table)
+
+    auth_table = tomlkit.table()
+    auth_table.add("method", auth_method)
+    if auth_username is not None:
+        auth_table.add("username", auth_username)
+    doc.add("auth", auth_table)
+
+    sync_table = tomlkit.table()
+    sync_table.add("poll_interval", poll_interval)
+    sync_table.add("socket_path", socket_path)
+    doc.add("sync", sync_table)
+
+    mapping_table = tomlkit.table()
+    if projects:
+        aot = tomlkit.aot()
+        for pm in projects:
+            t = tomlkit.table()
+            t.add("ticktick", pm.ticktick)
+            t.add("taskwarrior", pm.taskwarrior)
+            aot.append(t)
+        mapping_table.add("projects", aot)
+    doc.add("mapping", mapping_table)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
