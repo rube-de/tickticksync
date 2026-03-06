@@ -431,9 +431,9 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
 
     selected = unmapped[choice - 1]
     default_tw = selected["name"].lower()
-    tw_name = click.prompt("TaskWarrior project name", default=default_tw)
+    tw_name = click.prompt("TaskWarrior project name", default=default_tw).strip()
 
-    if not tw_name.strip():
+    if not tw_name:
         raise click.ClickException("TaskWarrior project name cannot be empty.")
 
     if tw_name in mapped_tw_names:
