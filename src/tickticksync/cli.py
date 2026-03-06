@@ -86,6 +86,18 @@ def _build_api(cfg: Config) -> TickTickAPI:
     return TickTickAPI(*api_args)
 
 
+def _fetch_ticktick_projects(api: TickTickAPI) -> list[dict]:
+    """Connect to TickTick, fetch all projects, then disconnect."""
+    async def _fetch() -> list[dict]:
+        await api.connect()
+        try:
+            return await api.get_projects()
+        finally:
+            await api.disconnect()
+
+    return asyncio.run(_fetch())
+
+
 def _read_pid() -> int | None:
     """Read PID from file and verify process exists. Cleans up stale files."""
     try:
@@ -413,16 +425,9 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
     # Interactive mode — fetch projects from TickTick API
     tt = _build_api(cfg)
 
-    async def _fetch() -> list[dict]:
-        await tt.connect()
-        try:
-            return await tt.get_projects()
-        finally:
-            await tt.disconnect()
-
     click.echo("Fetching TickTick projects...")
     try:
-        all_projects = asyncio.run(_fetch())
+        all_projects = _fetch_ticktick_projects(tt)
     except Exception as exc:
         raise click.ClickException(f"Failed to fetch TickTick projects: {exc}") from exc
     unmapped = [p for p in all_projects if p["name"] not in mapped_names]

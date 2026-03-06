@@ -206,6 +206,29 @@ def test_run_oauth_flow_returns_token_path(runner, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# _fetch_ticktick_projects helper
+# ---------------------------------------------------------------------------
+
+def test_fetch_ticktick_projects_returns_list(tmp_path):
+    """_fetch_ticktick_projects returns the project list from the API."""
+    from tickticksync.cli import _fetch_ticktick_projects
+
+    mock_api = MagicMock()
+    mock_api.connect = AsyncMock()
+    mock_api.disconnect = AsyncMock()
+    mock_api.get_projects = AsyncMock(return_value=[
+        {"id": "1", "name": "Inbox"},
+        {"id": "2", "name": "Work"},
+    ])
+
+    projects = _fetch_ticktick_projects(mock_api)
+    assert len(projects) == 2
+    assert projects[0]["name"] == "Inbox"
+    mock_api.connect.assert_awaited_once()
+    mock_api.disconnect.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
 # mapping list
 # ---------------------------------------------------------------------------
 
