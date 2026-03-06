@@ -1,6 +1,5 @@
 import json
 import socket
-import pytest
 from pathlib import Path
 from tickticksync.hooks import send_to_daemon, drain_queue
 

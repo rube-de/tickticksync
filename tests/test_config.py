@@ -2,7 +2,7 @@
 import pytest
 import tomlkit
 from pathlib import Path
-from tickticksync.config import load_config, save_config_auth, save_config_mapping, save_config_sync, save_config_full, Config, SyncConfig, MappingConfig, ProjectMapping
+from tickticksync.config import load_config, save_config_auth, save_config_mapping, save_config_sync, save_config_full, MappingConfig, ProjectMapping
 
 
 def test_load_minimal_config(tmp_config):

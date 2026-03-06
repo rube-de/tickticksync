@@ -184,7 +184,7 @@ def test_run_oauth_flow_returns_token_path(runner, tmp_path):
         fake_request.makefile.return_value = BytesIO(
             b"GET /callback?code=authcode123&state=st8 HTTP/1.1\r\n\r\n"
         )
-        instance = cls(fake_request, ("127.0.0.1", 9999), MagicMock())
+        cls(fake_request, ("127.0.0.1", 9999), MagicMock())
         return True
 
     mock_event = MagicMock()
@@ -542,7 +542,7 @@ def test_init_oauth_failure_continues(runner, tmp_path):
 
     with (
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
-        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli.save_config_full"),
         patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("No OAuth code received")),
         patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
         patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),

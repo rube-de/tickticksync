@@ -19,13 +19,11 @@ from .config import (
     AuthConfig,
     Config,
     ProjectMapping,
-    SyncConfig,
     TickTickConfig,
     load_config,
     save_config_auth,
     save_config_full,
     save_config_mapping,
-    save_config_sync,
 )
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
