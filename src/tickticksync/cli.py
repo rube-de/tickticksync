@@ -371,6 +371,7 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
     cfg = load_config()
     existing = cfg.mapping.projects
     mapped_names = {p.ticktick for p in existing}
+    mapped_tw_names = {p.taskwarrior for p in existing}
 
     if bool(ticktick) != bool(taskwarrior):
         raise click.ClickException(
@@ -380,6 +381,10 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
     if ticktick and taskwarrior:
         if ticktick in mapped_names:
             raise click.ClickException(f'"{ticktick}" is already mapped.')
+        if taskwarrior in mapped_tw_names:
+            raise click.ClickException(
+                f'TaskWarrior project "{taskwarrior}" is already used by another mapping.'
+            )
         updated = list(existing) + [ProjectMapping(ticktick=ticktick, taskwarrior=taskwarrior)]
         save_config_mapping(DEFAULT_CONFIG_PATH, updated)
         click.echo(f'\u2713 Mapped "{ticktick}" \u2192 "{taskwarrior}"')
@@ -414,6 +419,11 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
     selected = unmapped[choice - 1]
     default_tw = selected["name"].lower()
     tw_name = click.prompt("TaskWarrior project name", default=default_tw)
+
+    if tw_name in mapped_tw_names:
+        raise click.ClickException(
+            f'TaskWarrior project "{tw_name}" is already used by another mapping.'
+        )
 
     updated = list(existing) + [ProjectMapping(ticktick=selected["name"], taskwarrior=tw_name)]
     save_config_mapping(DEFAULT_CONFIG_PATH, updated)
