@@ -82,7 +82,7 @@ def _build_api(cfg: Config) -> TickTickAPI:
             raise click.ClickException(
                 f"No stored password for {username!r}. Run `tickticksync auth password`."
             )
-        return TickTickAPI(*api_args, username=username, password=password)
+        return TickTickAPI(*api_args, username=username, password=password, use_v2_tasks=True)
     return TickTickAPI(*api_args)
 
 
@@ -371,6 +371,11 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
     cfg = load_config()
     existing = cfg.mapping.projects
     mapped_names = {p.ticktick for p in existing}
+
+    if bool(ticktick) != bool(taskwarrior):
+        raise click.ClickException(
+            "Both --ticktick and --taskwarrior are required together."
+        )
 
     if ticktick and taskwarrior:
         if ticktick in mapped_names:
