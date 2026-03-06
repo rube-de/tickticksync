@@ -304,3 +304,53 @@ def test_mapping_add_interactive_no_unmapped(runner, tmp_path):
 
     assert result.exit_code == 0
     assert "all projects are already mapped" in result.output.lower()
+
+
+def test_mapping_add_non_interactive_duplicate_taskwarrior(runner, tmp_path):
+    """mapping add rejects a TaskWarrior project name already used by another mapping."""
+    _, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(
+            cli, ["mapping", "add", "--ticktick", "Personal", "--taskwarrior", "work"]
+        )
+    assert result.exit_code != 0
+    assert "already used" in result.output.lower()
+
+
+def test_mapping_add_partial_flags_rejected(runner, tmp_path):
+    """mapping add with only one of --ticktick/--taskwarrior raises an error."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(
+            cli, ["mapping", "add", "--ticktick", "Work"]
+        )
+    assert result.exit_code != 0
+    assert "both" in result.output.lower()
+
+
+def test_mapping_add_interactive_duplicate_taskwarrior(runner, tmp_path):
+    """Interactive mode rejects a TaskWarrior name that's already in use."""
+    from unittest.mock import AsyncMock
+
+    config_path, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Inbox", taskwarrior="inbox")]
+
+    mock_api = MagicMock()
+    mock_api.connect = AsyncMock()
+    mock_api.disconnect = AsyncMock()
+    mock_api.get_projects = AsyncMock(return_value=[
+        {"id": "1", "name": "Inbox"},
+        {"id": "2", "name": "Personal"},
+    ])
+
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli._build_api", return_value=mock_api),
+    ):
+        # Select project 1 (Personal), enter "inbox" as TW name (already used)
+        result = runner.invoke(cli, ["mapping", "add"], input="1\ninbox\n")
+
+    assert result.exit_code != 0
+    assert "already used" in result.output.lower()
