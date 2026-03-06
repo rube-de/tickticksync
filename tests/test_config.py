@@ -2,7 +2,7 @@
 import pytest
 import tomlkit
 from pathlib import Path
-from tickticksync.config import load_config, save_config_auth, save_config_mapping, save_config_sync, save_config_full, MappingConfig, ProjectMapping
+from tickticksync.config import load_config, save_config_auth, save_config_mapping, save_config_full, MappingConfig, ProjectMapping
 
 
 def test_load_minimal_config(tmp_config):
@@ -237,35 +237,6 @@ def test_save_config_mapping_creates_from_scratch(tmp_path):
     text = cfg_path.read_text()
     assert "ticktick" in text
     assert "taskwarrior" in text
-
-
-def test_save_config_sync_writes_section(tmp_path: Path):
-    """save_config_sync writes [sync] section with poll_interval and socket_path."""
-    config_path = tmp_path / "config.toml"
-    config_path.write_text('[ticktick]\nclient_id = "cid"\nclient_secret = "csec"\n')
-
-    save_config_sync(config_path, poll_interval=120, socket_path="/tmp/custom.sock")
-
-    doc = tomlkit.parse(config_path.read_text())
-    assert doc["sync"]["poll_interval"] == 120
-    assert doc["sync"]["socket_path"] == "/tmp/custom.sock"
-    # Verify existing sections are preserved
-    assert doc["ticktick"]["client_id"] == "cid"
-
-
-def test_save_config_sync_overwrites_existing(tmp_path: Path):
-    """save_config_sync overwrites an existing [sync] section."""
-    config_path = tmp_path / "config.toml"
-    config_path.write_text(
-        '[ticktick]\nclient_id = "cid"\nclient_secret = "csec"\n\n'
-        '[sync]\npoll_interval = 60\nsocket_path = "/tmp/old.sock"\n'
-    )
-
-    save_config_sync(config_path, poll_interval=30, socket_path="/tmp/new.sock")
-
-    doc = tomlkit.parse(config_path.read_text())
-    assert doc["sync"]["poll_interval"] == 30
-    assert doc["sync"]["socket_path"] == "/tmp/new.sock"
 
 
 def test_save_config_full_writes_all_sections(tmp_path: Path):

@@ -42,30 +42,7 @@ _OAUTH_REDIRECT_URI = "http://localhost:8080/callback"
 def _build_engine(cfg: Config) -> SyncEngine:
     state = StateStore(cfg.db_path)
     tw = TaskWarriorClient()
-
-    api_args = (cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path))
-
-    if cfg.auth.method == "password":
-        username = cfg.auth.username
-        if not username:
-            raise click.ClickException(
-                "No username configured. Run `tickticksync auth password`."
-            )
-        try:
-            password = keyring.get_password(_KEYRING_SERVICE, username)
-        except keyring.errors.NoKeyringError:
-            raise click.ClickException(
-                "No system keyring available. Run `tickticksync auth password` on a"
-                " machine with a keyring (macOS Keychain or Linux Secret Service)."
-            )
-        if not password:
-            raise click.ClickException(
-                f"No stored password for {username!r}. Run `tickticksync auth password`."
-            )
-        tt = TickTickAPI(*api_args, username=username, password=password, use_v2_tasks=True)
-    else:
-        tt = TickTickAPI(*api_args)
-
+    tt = _build_api(cfg)
     return SyncEngine(
         store=state, tw=tw, tt=tt, default_project=cfg.mapping.default_project
     )
@@ -274,22 +251,20 @@ def init() -> None:
     client_secret = click.prompt("Client secret")
 
     tt_cfg = TickTickConfig(client_id=client_id, client_secret=client_secret)
+    auth_method = "oauth"
+    tmp_cfg = Config(ticktick=tt_cfg, auth=AuthConfig(method=auth_method))
 
     # --- Step 2/4: OAuth ---
     click.echo("\n── Step 2/4: OAuth authentication ──")
-    auth_method = "oauth"
     try:
-        _run_oauth_flow(tt_cfg, Config(ticktick=tt_cfg).token_path)
+        _run_oauth_flow(tt_cfg, tmp_cfg.token_path)
     except click.ClickException:
         click.echo("OAuth authentication was not completed.")
-        if click.confirm("Skip auth for now?", default=True):
-            click.echo(
-                "You can authenticate later with: tickticksync auth oauth"
-            )
-        else:
-            click.echo(
-                "You can authenticate later with: tickticksync auth oauth"
-            )
+        if not click.confirm("Skip auth for now?", default=True):
+            raise
+        click.echo(
+            "You can authenticate later with: tickticksync auth oauth"
+        )
 
     # --- Step 3/4: Sync settings ---
     click.echo("\n── Step 3/4: Sync settings ──")
@@ -303,7 +278,6 @@ def init() -> None:
     # Try to fetch projects from TickTick
     tt_projects: list[dict] | None = None
     try:
-        tmp_cfg = Config(ticktick=tt_cfg, auth=AuthConfig(method=auth_method))
         api = _build_api(tmp_cfg)
         tt_projects = _fetch_ticktick_projects(api)
     except Exception:
@@ -315,14 +289,13 @@ def init() -> None:
     if tt_projects is not None:
         mapped_names: set[str] = set()
         mapped_tw_names: set[str] = set()
-        available = list(tt_projects)
 
-        while available:
+        while True:
             if not click.confirm("Add a project mapping?", default=True):
                 break
 
             # Show available (unmapped) projects
-            unmapped = [p for p in available if p["name"] not in mapped_names]
+            unmapped = [p for p in tt_projects if p["name"] not in mapped_names]
             if not unmapped:
                 click.echo("All projects have been mapped.")
                 break
@@ -358,7 +331,6 @@ def init() -> None:
             mapped_tw_names.add(tw_name)
 
     # --- Save config ---
-    config_path.parent.mkdir(parents=True, exist_ok=True)
     save_config_full(
         config_path,
         client_id=client_id,
