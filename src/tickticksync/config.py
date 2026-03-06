@@ -126,3 +126,18 @@ def save_config_mapping(path: Path, projects: list[ProjectMapping]) -> None:
     doc["mapping"]["projects"] = aot
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+
+def save_config_sync(path: Path, poll_interval: int, socket_path: str) -> None:
+    """Write or overwrite the [sync] section in the config file at *path*."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        text = ""
+    doc = tomlkit.parse(text)
+    sync_table = tomlkit.table()
+    sync_table.add("poll_interval", poll_interval)
+    sync_table.add("socket_path", socket_path)
+    doc["sync"] = sync_table
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
