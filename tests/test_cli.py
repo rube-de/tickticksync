@@ -154,7 +154,7 @@ def test_auth_oauth_timeout_exits_with_error(runner, tmp_path):
 
 def test_mapping_list_shows_table(runner, tmp_path):
     """mapping list with configured projects shows a formatted table."""
-    config_path, cfg = _make_cfg(tmp_path)
+    _, cfg = _make_cfg(tmp_path)
     cfg.mapping.projects = [
         ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
         ProjectMapping(ticktick="Work", taskwarrior="work"),
@@ -166,6 +166,17 @@ def test_mapping_list_shows_table(runner, tmp_path):
     assert "inbox" in result.output
     assert "Work" in result.output
     assert "2 mappings" in result.output
+
+
+def test_mapping_list_singular(runner, tmp_path):
+    """mapping list with exactly one mapping shows '1 mapping' (singular)."""
+    _, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Inbox", taskwarrior="inbox")]
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["mapping", "list"])
+    assert result.exit_code == 0
+    assert "1 mapping" in result.output
+    assert "1 mappings" not in result.output
 
 
 def test_mapping_list_empty(runner, tmp_path):

@@ -73,11 +73,11 @@ def _build_api(cfg: Config) -> TickTickAPI:
             )
         try:
             password = keyring.get_password(_KEYRING_SERVICE, username)
-        except keyring.errors.NoKeyringError:
+        except keyring.errors.NoKeyringError as err:
             raise click.ClickException(
                 "No system keyring available. Run `tickticksync auth password` on a"
                 " machine with a keyring (macOS Keychain or Linux Secret Service)."
-            )
+            ) from err
         if not password:
             raise click.ClickException(
                 f"No stored password for {username!r}. Run `tickticksync auth password`."
@@ -345,10 +345,12 @@ def mapping_list() -> None:
         return
     tt_width = max(len(p.ticktick) for p in projects)
     tt_width = max(tt_width, len("TickTick Project"))
-    click.echo(f"{'TickTick Project':<{tt_width}}  → TaskWarrior Project")
-    click.echo("─" * (tt_width + 25))
+    tw_width = max(len(p.taskwarrior) for p in projects)
+    tw_width = max(tw_width, len("TaskWarrior Project"))
+    click.echo(f"{'TickTick Project':<{tt_width}}  → {'TaskWarrior Project':<{tw_width}}")
+    click.echo("─" * (tt_width + 4 + tw_width))
     for pm in projects:
-        click.echo(f"{pm.ticktick:<{tt_width}}  → {pm.taskwarrior}")
+        click.echo(f"{pm.ticktick:<{tt_width}}  → {pm.taskwarrior:<{tw_width}}")
     click.echo(f"({len(projects)} mapping{'s' if len(projects) != 1 else ''})")
 
 
@@ -361,7 +363,10 @@ def mapping_remove(ticktick_project: str) -> None:
     updated = [p for p in projects if p.ticktick != ticktick_project]
     if len(updated) == len(projects):
         raise click.ClickException(f'No mapping found for "{ticktick_project}"')
-    save_config_mapping(DEFAULT_CONFIG_PATH, updated)
+    try:
+        save_config_mapping(DEFAULT_CONFIG_PATH, updated)
+    except OSError as err:
+        raise click.ClickException(f"Failed to save config: {err}") from err
     click.echo(f'\u2713 Removed mapping for "{ticktick_project}"')
 
 
@@ -387,8 +392,11 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
             raise click.ClickException(
                 f'TaskWarrior project "{taskwarrior}" is already used by another mapping.'
             )
-        updated = list(existing) + [ProjectMapping(ticktick=ticktick, taskwarrior=taskwarrior)]
-        save_config_mapping(DEFAULT_CONFIG_PATH, updated)
+        updated = [*existing, ProjectMapping(ticktick=ticktick, taskwarrior=taskwarrior)]
+        try:
+            save_config_mapping(DEFAULT_CONFIG_PATH, updated)
+        except OSError as err:
+            raise click.ClickException(f"Failed to save config: {err}") from err
         click.echo(f'\u2713 Mapped "{ticktick}" \u2192 "{taskwarrior}"')
         return
 
@@ -425,11 +433,17 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
     default_tw = selected["name"].lower()
     tw_name = click.prompt("TaskWarrior project name", default=default_tw)
 
+    if not tw_name.strip():
+        raise click.ClickException("TaskWarrior project name cannot be empty.")
+
     if tw_name in mapped_tw_names:
         raise click.ClickException(
             f'TaskWarrior project "{tw_name}" is already used by another mapping.'
         )
 
-    updated = list(existing) + [ProjectMapping(ticktick=selected["name"], taskwarrior=tw_name)]
-    save_config_mapping(DEFAULT_CONFIG_PATH, updated)
+    updated = [*existing, ProjectMapping(ticktick=selected["name"], taskwarrior=tw_name)]
+    try:
+        save_config_mapping(DEFAULT_CONFIG_PATH, updated)
+    except OSError as err:
+        raise click.ClickException(f"Failed to save config: {err}") from err
     click.echo(f'\n\u2713 Mapped "{selected["name"]}" \u2192 "{tw_name}"')
