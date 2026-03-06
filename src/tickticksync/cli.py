@@ -14,7 +14,7 @@ import keyring
 import keyring.errors
 from ticktick_sdk.auth_cli import OAuth2Handler
 
-from .config import DEFAULT_CONFIG_PATH, Config, ProjectMapping, load_config, save_config_auth, save_config_mapping
+from .config import DEFAULT_CONFIG_PATH, Config, ProjectMapping, TickTickConfig, load_config, save_config_auth, save_config_mapping
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
@@ -114,14 +114,14 @@ def auth() -> None:
     """Authenticate with TickTick (OAuth or password)."""
 
 
-@auth.command("oauth")
-def auth_oauth() -> None:
-    """Run the browser OAuth2 flow and save the access token."""
-    config_path = DEFAULT_CONFIG_PATH
-    cfg = load_config(config_path)
+def _run_oauth_flow(tt_cfg: TickTickConfig, token_path: Path) -> Path:
+    """Run the browser OAuth2 flow and save the access token to *token_path*.
 
+    This is the reusable core shared by ``auth oauth`` and ``init``.
+    It does **not** update the config auth method — callers handle that.
+    """
     parsed_redirect = urlparse(_OAUTH_REDIRECT_URI)
-    handler = OAuth2Handler(cfg.ticktick.client_id, cfg.ticktick.client_secret, _OAUTH_REDIRECT_URI)
+    handler = OAuth2Handler(tt_cfg.client_id, tt_cfg.client_secret, _OAUTH_REDIRECT_URI)
     auth_url, state = handler.get_authorization_url()
 
     click.echo(f"\nOpen this URL in your browser:\n\n  {auth_url}\n")
@@ -165,11 +165,21 @@ def auth_oauth() -> None:
 
     token = asyncio.run(handler.exchange_code(captured["code"], captured["state"]))
 
-    token_path = cfg.token_path
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(json.dumps({"access_token": token.access_token}))
     token_path.chmod(0o600)
     click.echo(f"Token saved to {token_path}")
+
+    return token_path
+
+
+@auth.command("oauth")
+def auth_oauth() -> None:
+    """Run the browser OAuth2 flow and save the access token."""
+    config_path = DEFAULT_CONFIG_PATH
+    cfg = load_config(config_path)
+
+    _run_oauth_flow(cfg.ticktick, cfg.token_path)
 
     save_config_auth(config_path, "oauth")
     click.echo("Auth method set to 'oauth' in config.")

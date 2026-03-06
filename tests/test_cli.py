@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from click.testing import CliRunner
 from tickticksync.cli import cli
 from tickticksync.config import Config, ProjectMapping, TickTickConfig
@@ -146,6 +146,63 @@ def test_auth_oauth_timeout_exits_with_error(runner, tmp_path):
 
     assert result.exit_code == 1
     assert "No OAuth code" in result.output
+
+
+# ---------------------------------------------------------------------------
+# _run_oauth_flow helper
+# ---------------------------------------------------------------------------
+
+def test_run_oauth_flow_returns_token_path(runner, tmp_path):
+    """_run_oauth_flow runs the browser flow and returns the token path."""
+    from tickticksync.cli import _run_oauth_flow
+    from tickticksync.config import TickTickConfig
+    from io import BytesIO
+
+    token_path = tmp_path / "token.json"
+    tt_cfg = TickTickConfig(client_id="cid", client_secret="csec")
+
+    mock_handler = MagicMock()
+    mock_handler.get_authorization_url.return_value = ("https://auth.url", "st8")
+    mock_token = MagicMock()
+    mock_token.access_token = "tok123"
+    mock_handler.exchange_code = AsyncMock(return_value=mock_token)
+
+    # Capture the handler class passed to HTTPServer so we can simulate
+    # a callback request that populates the ``captured`` dict.
+    handler_cls_holder = {}
+
+    def _fake_http_server(addr, handler_cls):
+        handler_cls_holder["cls"] = handler_cls
+        return MagicMock()
+
+    def _fake_wait(timeout=None):
+        # Simulate the browser redirect hitting the callback server by
+        # instantiating the handler class with a mock request.
+        cls = handler_cls_holder["cls"]
+        fake_request = MagicMock()
+        fake_request.makefile.return_value = BytesIO(
+            b"GET /callback?code=authcode123&state=st8 HTTP/1.1\r\n\r\n"
+        )
+        instance = cls(fake_request, ("127.0.0.1", 9999), MagicMock())
+        return True
+
+    mock_event = MagicMock()
+    mock_event.wait = _fake_wait
+
+    with (
+        patch("tickticksync.cli.webbrowser.open"),
+        patch("tickticksync.cli.OAuth2Handler", return_value=mock_handler),
+        patch("tickticksync.cli.http.server.HTTPServer", side_effect=_fake_http_server),
+        patch("tickticksync.cli.threading.Thread"),
+        patch("tickticksync.cli.threading.Event", return_value=mock_event),
+        patch("tickticksync.cli.asyncio.run", return_value=mock_token),
+    ):
+        result_path = _run_oauth_flow(tt_cfg, token_path)
+
+    assert result_path == token_path
+    assert token_path.exists()
+    import json
+    assert json.loads(token_path.read_text())["access_token"] == "tok123"
 
 
 # ---------------------------------------------------------------------------
