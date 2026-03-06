@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 from tickticksync.cli import cli
-from tickticksync.config import Config, TickTickConfig
+from tickticksync.config import Config, ProjectMapping, TickTickConfig
 
 
 @pytest.fixture
@@ -146,3 +146,222 @@ def test_auth_oauth_timeout_exits_with_error(runner, tmp_path):
 
     assert result.exit_code == 1
     assert "No OAuth code" in result.output
+
+
+# ---------------------------------------------------------------------------
+# mapping list
+# ---------------------------------------------------------------------------
+
+def test_mapping_list_shows_table(runner, tmp_path):
+    """mapping list with configured projects shows a formatted table."""
+    _, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [
+        ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
+        ProjectMapping(ticktick="Work", taskwarrior="work"),
+    ]
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["mapping", "list"])
+    assert result.exit_code == 0
+    assert "Inbox" in result.output
+    assert "inbox" in result.output
+    assert "Work" in result.output
+    assert "2 mappings" in result.output
+
+
+def test_mapping_list_singular(runner, tmp_path):
+    """mapping list with exactly one mapping shows '1 mapping' (singular)."""
+    _, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Inbox", taskwarrior="inbox")]
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["mapping", "list"])
+    assert result.exit_code == 0
+    assert "1 mapping" in result.output
+    assert "1 mappings" not in result.output
+
+
+def test_mapping_list_empty(runner, tmp_path):
+    """mapping list with no mappings shows a helpful message."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["mapping", "list"])
+    assert result.exit_code == 0
+    assert "No project mappings configured" in result.output
+
+
+# ---------------------------------------------------------------------------
+# mapping remove
+# ---------------------------------------------------------------------------
+
+def test_mapping_remove_existing(runner, tmp_path):
+    """mapping remove deletes a mapping and persists the change."""
+    config_path, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [
+        ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
+        ProjectMapping(ticktick="Work", taskwarrior="work"),
+    ]
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_mapping") as mock_save,
+    ):
+        result = runner.invoke(cli, ["mapping", "remove", "Work"])
+    assert result.exit_code == 0
+    assert "Removed mapping" in result.output
+    assert "Work" in result.output
+    saved_projects = mock_save.call_args[0][1]
+    assert len(saved_projects) == 1
+    assert saved_projects[0].ticktick == "Inbox"
+
+
+def test_mapping_remove_nonexistent(runner, tmp_path):
+    """mapping remove for a non-existent mapping shows an error."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["mapping", "remove", "Nonexistent"])
+    assert result.exit_code != 0
+    assert "No mapping found" in result.output
+
+
+# ---------------------------------------------------------------------------
+# mapping add
+# ---------------------------------------------------------------------------
+
+def test_mapping_add_non_interactive(runner, tmp_path):
+    """mapping add --ticktick X --taskwarrior y adds the mapping."""
+    config_path, cfg = _make_cfg(tmp_path)
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_mapping") as mock_save,
+    ):
+        result = runner.invoke(
+            cli, ["mapping", "add", "--ticktick", "Work", "--taskwarrior", "work"]
+        )
+    assert result.exit_code == 0
+    assert "Work" in result.output
+    assert "work" in result.output
+    saved = mock_save.call_args[0][1]
+    assert any(p.ticktick == "Work" and p.taskwarrior == "work" for p in saved)
+
+
+def test_mapping_add_non_interactive_duplicate(runner, tmp_path):
+    """mapping add for an already-mapped TickTick project shows an error."""
+    _, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(
+            cli, ["mapping", "add", "--ticktick", "Work", "--taskwarrior", "other"]
+        )
+    assert result.exit_code != 0
+    assert "already mapped" in result.output.lower()
+
+
+def test_mapping_add_interactive(runner, tmp_path):
+    """Interactive mapping add fetches projects, shows unmapped, prompts user."""
+    from unittest.mock import AsyncMock
+
+    config_path, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Inbox", taskwarrior="inbox")]
+
+    mock_api = MagicMock()
+    mock_api.connect = AsyncMock()
+    mock_api.disconnect = AsyncMock()
+    mock_api.get_projects = AsyncMock(return_value=[
+        {"id": "1", "name": "Inbox"},
+        {"id": "2", "name": "Personal"},
+        {"id": "3", "name": "Shopping"},
+    ])
+
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_mapping") as mock_save,
+        patch("tickticksync.cli._build_api", return_value=mock_api),
+    ):
+        # Select project 1 (Personal), accept default TW name
+        result = runner.invoke(cli, ["mapping", "add"], input="1\n\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Personal" in result.output
+    saved = mock_save.call_args[0][1]
+    new_mappings = [p for p in saved if p.ticktick == "Personal"]
+    assert len(new_mappings) == 1
+    assert new_mappings[0].taskwarrior == "personal"
+
+
+def test_mapping_add_interactive_no_unmapped(runner, tmp_path):
+    """When all projects are already mapped, show a message."""
+    from unittest.mock import AsyncMock
+
+    _, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [
+        ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
+        ProjectMapping(ticktick="Work", taskwarrior="work"),
+    ]
+
+    mock_api = MagicMock()
+    mock_api.connect = AsyncMock()
+    mock_api.disconnect = AsyncMock()
+    mock_api.get_projects = AsyncMock(return_value=[
+        {"id": "1", "name": "Inbox"},
+        {"id": "2", "name": "Work"},
+    ])
+
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli._build_api", return_value=mock_api),
+    ):
+        result = runner.invoke(cli, ["mapping", "add"])
+
+    assert result.exit_code == 0
+    assert "all projects are already mapped" in result.output.lower()
+
+
+def test_mapping_add_non_interactive_duplicate_taskwarrior(runner, tmp_path):
+    """mapping add rejects a TaskWarrior project name already used by another mapping."""
+    _, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(
+            cli, ["mapping", "add", "--ticktick", "Personal", "--taskwarrior", "work"]
+        )
+    assert result.exit_code != 0
+    assert "already used" in result.output.lower()
+
+
+def test_mapping_add_partial_flags_rejected(runner, tmp_path):
+    """mapping add with only one of --ticktick/--taskwarrior raises an error."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(
+            cli, ["mapping", "add", "--ticktick", "Work"]
+        )
+    assert result.exit_code != 0
+    assert "both" in result.output.lower()
+
+
+def test_mapping_add_interactive_duplicate_taskwarrior(runner, tmp_path):
+    """Interactive mode rejects a TaskWarrior name that's already in use."""
+    from unittest.mock import AsyncMock
+
+    config_path, cfg = _make_cfg(tmp_path)
+    cfg.mapping.projects = [ProjectMapping(ticktick="Inbox", taskwarrior="inbox")]
+
+    mock_api = MagicMock()
+    mock_api.connect = AsyncMock()
+    mock_api.disconnect = AsyncMock()
+    mock_api.get_projects = AsyncMock(return_value=[
+        {"id": "1", "name": "Inbox"},
+        {"id": "2", "name": "Personal"},
+    ])
+
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli._build_api", return_value=mock_api),
+    ):
+        # Select project 1 (Personal), enter "inbox" as TW name (already used)
+        result = runner.invoke(cli, ["mapping", "add"], input="1\ninbox\n")
+
+    assert result.exit_code != 0
+    assert "already used" in result.output.lower()
