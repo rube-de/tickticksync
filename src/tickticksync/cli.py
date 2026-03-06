@@ -343,10 +343,12 @@ def mapping_list() -> None:
         click.echo("No project mappings configured.")
         click.echo("Run `tickticksync mapping add` to create one.")
         return
-    click.echo("TickTick Project    → TaskWarrior Project")
-    click.echo("─" * 41)
+    tt_width = max(len(p.ticktick) for p in projects)
+    tt_width = max(tt_width, len("TickTick Project"))
+    click.echo(f"{'TickTick Project':<{tt_width}}  → TaskWarrior Project")
+    click.echo("─" * (tt_width + 25))
     for pm in projects:
-        click.echo(f"{pm.ticktick:<20}→ {pm.taskwarrior}")
+        click.echo(f"{pm.ticktick:<{tt_width}}  → {pm.taskwarrior}")
     click.echo(f"({len(projects)} mapping{'s' if len(projects) != 1 else ''})")
 
 
@@ -401,7 +403,10 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
             await tt.disconnect()
 
     click.echo("Fetching TickTick projects...")
-    all_projects = asyncio.run(_fetch())
+    try:
+        all_projects = asyncio.run(_fetch())
+    except Exception as exc:
+        raise click.ClickException(f"Failed to fetch TickTick projects: {exc}") from exc
     unmapped = [p for p in all_projects if p["name"] not in mapped_names]
 
     if not unmapped:
