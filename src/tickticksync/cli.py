@@ -259,6 +259,8 @@ def init() -> None:
     click.echo("\n── Step 2/4: OAuth authentication ──")
     try:
         _run_oauth_flow(tt_cfg, tmp_cfg.token_path)
+    except click.Abort:
+        raise
     except Exception as exc:  # noqa: BLE001
         click.echo(f"OAuth authentication failed: {exc}")
         if not click.confirm("Skip auth for now?", default=True):

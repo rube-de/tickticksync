@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from click.testing import CliRunner
 from tickticksync.cli import cli
-from tickticksync.config import Config, ProjectMapping, TickTickConfig
+from tickticksync.config import Config, ProjectMapping, SyncConfig, TickTickConfig
 
 
 @pytest.fixture
@@ -460,6 +460,8 @@ def test_init_fresh_prompts_credentials(runner, tmp_path):
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
         patch("tickticksync.cli.save_config_full") as mock_save,
         patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("OAuth skipped")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
         patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
         patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
     ):
@@ -481,6 +483,8 @@ def test_init_fresh_sync_settings_defaults(runner, tmp_path):
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
         patch("tickticksync.cli.save_config_full") as mock_save,
         patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("OAuth skipped")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
         patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
         patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
     ):
@@ -490,8 +494,8 @@ def test_init_fresh_sync_settings_defaults(runner, tmp_path):
     assert result.exit_code == 0, result.output
     assert "Step 3/4" in result.output
     save_kwargs = mock_save.call_args[1]
-    assert save_kwargs["poll_interval"] == 60
-    assert save_kwargs["socket_path"] == "/tmp/tickticksync.sock"
+    assert save_kwargs["poll_interval"] == SyncConfig.poll_interval
+    assert save_kwargs["socket_path"] == SyncConfig.socket_path
 
 
 def test_init_fresh_sync_settings_custom(runner, tmp_path):
@@ -502,6 +506,8 @@ def test_init_fresh_sync_settings_custom(runner, tmp_path):
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
         patch("tickticksync.cli.save_config_full") as mock_save,
         patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("OAuth skipped")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
         patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
         patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
     ):
@@ -544,6 +550,8 @@ def test_init_oauth_failure_continues(runner, tmp_path):
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
         patch("tickticksync.cli.save_config_full"),
         patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("No OAuth code received")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
         patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
         patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
     ):
@@ -560,13 +568,6 @@ def test_init_fresh_mapping_wizard(runner, tmp_path):
     token_path = tmp_path / "token.json"
 
     mock_api = MagicMock()
-    mock_api.connect = AsyncMock()
-    mock_api.disconnect = AsyncMock()
-    mock_api.get_projects = AsyncMock(return_value=[
-        {"id": "1", "name": "Inbox"},
-        {"id": "2", "name": "Work"},
-        {"id": "3", "name": "Personal"},
-    ])
 
     with (
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
@@ -609,6 +610,8 @@ def test_init_skip_mapping(runner, tmp_path):
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
         patch("tickticksync.cli.save_config_full") as mock_save,
         patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("OAuth skipped")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
         patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
         patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
     ):

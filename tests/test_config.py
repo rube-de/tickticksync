@@ -309,3 +309,5 @@ def test_save_config_full_no_projects(tmp_path: Path):
     assert "ticktick" in doc
     assert "auth" in doc
     assert "sync" in doc
+    assert "mapping" in doc
+    assert doc["mapping"]["default_project"] == "inbox"
