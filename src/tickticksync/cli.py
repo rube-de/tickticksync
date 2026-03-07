@@ -19,6 +19,7 @@ from .config import (
     AuthConfig,
     Config,
     ProjectMapping,
+    SyncConfig,
     TickTickConfig,
     load_config,
     save_config_auth,
@@ -268,8 +269,8 @@ def init() -> None:
 
     # --- Step 3/4: Sync settings ---
     click.echo("\n── Step 3/4: Sync settings ──")
-    poll_interval = click.prompt("Poll interval (seconds)", default=60, type=int)
-    socket_path = click.prompt("Socket path", default="/tmp/tickticksync.sock")
+    poll_interval = click.prompt("Poll interval (seconds)", default=SyncConfig.poll_interval, type=int)
+    socket_path = click.prompt("Socket path", default=SyncConfig.socket_path)
 
     # --- Step 4/4: Project mappings ---
     click.echo("\n── Step 4/4: Project mappings ──")
