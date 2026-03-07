@@ -248,7 +248,7 @@ def init() -> None:
     # --- Step 1/4: Credentials ---
     click.echo("\n── Step 1/4: TickTick API credentials ──")
     client_id = click.prompt("Client ID")
-    client_secret = click.prompt("Client secret")
+    client_secret = click.prompt("Client secret", hide_input=True)
 
     tt_cfg = TickTickConfig(client_id=client_id, client_secret=client_secret)
     auth_method = "oauth"
@@ -258,10 +258,10 @@ def init() -> None:
     click.echo("\n── Step 2/4: OAuth authentication ──")
     try:
         _run_oauth_flow(tt_cfg, tmp_cfg.token_path)
-    except click.ClickException:
-        click.echo("OAuth authentication was not completed.")
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"OAuth authentication failed: {exc}")
         if not click.confirm("Skip auth for now?", default=True):
-            raise
+            raise click.ClickException(str(exc)) from exc
         click.echo(
             "You can authenticate later with: tickticksync auth oauth"
         )
@@ -280,9 +280,10 @@ def init() -> None:
     try:
         api = _build_api(tmp_cfg)
         tt_projects = _fetch_ticktick_projects(api)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
         click.echo(
-            "Could not fetch TickTick projects (auth may not be configured yet)."
+            f"Could not fetch TickTick projects: {exc}\n"
+            "(If auth is not yet configured, this is expected.)"
         )
         click.echo("You can add mappings later with: tickticksync mapping add")
 

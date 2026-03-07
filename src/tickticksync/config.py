@@ -155,7 +155,9 @@ def save_config_full(
 
     sync_table = tomlkit.table()
     sync_table.add("poll_interval", poll_interval)
+    sync_table.add("batch_window", SyncConfig.batch_window)
     sync_table.add("socket_path", socket_path)
+    sync_table.add("queue_path", SyncConfig.queue_path)
     doc.add("sync", sync_table)
 
     mapping_table = tomlkit.table()
@@ -170,4 +172,7 @@ def save_config_full(
     doc.add("mapping", mapping_table)
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    tmp_path.chmod(0o600)
+    tmp_path.replace(path)
