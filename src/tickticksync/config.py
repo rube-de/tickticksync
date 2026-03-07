@@ -161,6 +161,7 @@ def save_config_full(
     doc.add("sync", sync_table)
 
     mapping_table = tomlkit.table()
+    mapping_table.add("default_project", MappingConfig.default_project)
     if projects:
         aot = tomlkit.aot()
         for pm in projects:
