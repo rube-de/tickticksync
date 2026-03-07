@@ -529,6 +529,8 @@ def test_init_fresh_oauth_success(runner, tmp_path):
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
         patch("tickticksync.cli.save_config_full") as mock_save,
         patch("tickticksync.cli._run_oauth_flow", return_value=token_path) as mock_oauth,
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
         patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
         patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
     ):
@@ -632,6 +634,8 @@ def test_init_existing_config_asks_reconfigure(runner, tmp_path):
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
         patch("tickticksync.cli.save_config_full") as mock_save,
         patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("skip")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
         patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
         patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
     ):
