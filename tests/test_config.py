@@ -261,7 +261,10 @@ def test_save_config_full_writes_all_sections(tmp_path: Path):
     assert doc["ticktick"]["client_secret"] == "my_csec"
     assert doc["auth"]["method"] == "oauth"
     assert doc["sync"]["poll_interval"] == 120
+    assert doc["sync"]["batch_window"] == 5
     assert doc["sync"]["socket_path"] == "/tmp/custom.sock"
+    assert doc["sync"]["queue_path"] == "~/.local/share/tickticksync/hook_queue.json"
+    assert doc["mapping"]["default_project"] == "inbox"
     projects = doc["mapping"]["projects"]
     assert len(projects) == 2
     assert projects[0]["ticktick"] == "Inbox"
