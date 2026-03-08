@@ -48,7 +48,6 @@ def _build_engine(cfg: Config) -> SyncEngine:
         store=state,
         tw=tw,
         tt=tt,
-        default_project=cfg.mapping.default_project,
         project_mappings=cfg.mapping.projects,
     )
 

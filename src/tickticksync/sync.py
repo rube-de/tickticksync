@@ -37,12 +37,10 @@ class SyncEngine:
         tt: TickTickAPI,
         *,
         project_mappings: list[ProjectMapping] | None = None,
-        default_project: str = "inbox",
     ):
         self.store = store
         self.tw = tw
         self.tt = tt
-        self._default_project = default_project
         mappings = project_mappings or []
         self._tt_to_tw: dict[str, str] = {m.ticktick: m.taskwarrior for m in mappings}
         self._tw_to_tt: dict[str, str] = {m.taskwarrior: m.ticktick for m in mappings}
@@ -113,15 +111,15 @@ class SyncEngine:
     ) -> None:
         for change in changes:
             match change.kind:
-                case "tw_only":
+                case ChangeKind.TW_ONLY:
                     await self._push_tw_to_tt(change, project_map)
-                case "tt_only":
+                case ChangeKind.TT_ONLY:
                     await self._push_tt_to_tw(change, project_map)
-                case "conflict":
+                case ChangeKind.CONFLICT:
                     await self._resolve_conflict(change, project_map)
-                case "new_tw":
+                case ChangeKind.NEW_TW:
                     await self._create_in_tt(change, project_map)
-                case "new_tt":
+                case ChangeKind.NEW_TT:
                     await self._create_in_tw(change, project_map)
 
     async def _push_tw_to_tt(self, change: SyncChange, project_map: dict) -> None:
@@ -131,9 +129,13 @@ class SyncEngine:
         )
         self._update_mapping_timestamps(change)
 
+    def _resolve_tw_project(self, tt_task: dict, project_map: dict[str, str]) -> str:
+        """Resolve a TickTick task's project to the mapped TaskWarrior project name."""
+        tt_project_name = project_map.get(tt_task.get("projectId", ""), "")
+        return self._tt_to_tw.get(tt_project_name, tt_project_name)
+
     async def _push_tt_to_tw(self, change: SyncChange, project_map: dict) -> None:
-        tt_project_name = project_map.get(change.tt_task.get("projectId", ""), "")
-        tw_project = self._tt_to_tw.get(tt_project_name, tt_project_name)
+        tw_project = self._resolve_tw_project(change.tt_task, project_map)
         tw_fields = ticktick_task_to_tw(change.tt_task, tw_project)
         self.tw.update_task(str(change.tw_task["uuid"]), tw_fields)
         self._update_mapping_timestamps(change)
@@ -174,8 +176,7 @@ class SyncEngine:
         ))
 
     async def _create_in_tw(self, change: SyncChange, project_map: dict) -> None:
-        tt_project_name = project_map.get(change.tt_task.get("projectId", ""), "")
-        tw_project = self._tt_to_tw.get(tt_project_name, tt_project_name)
+        tw_project = self._resolve_tw_project(change.tt_task, project_map)
         tw_fields = ticktick_task_to_tw(change.tt_task, tw_project)
         new_uuid = self.tw.create_task(tw_fields)
         self.store.upsert_mapping(TaskMapping(
