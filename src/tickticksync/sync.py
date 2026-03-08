@@ -69,7 +69,7 @@ class SyncEngine:
             tt_task = tt_by_id.get(mapping.ticktick_id)
 
             # Skip mapped TW tasks that moved to an unmapped project
-            if tw_task is not None and self._tt_to_tw:
+            if tw_task is not None and self._tw_to_tt:
                 tw_project = tw_task.get("project", "")
                 if tw_project not in self._tw_to_tt:
                     logger.debug(
@@ -157,20 +157,25 @@ class SyncEngine:
         )
         self._update_mapping_timestamps(change)
 
-    def _resolve_tw_project(self, tt_task: dict, project_map: dict[str, str]) -> str:
-        """Resolve a TickTick task's project to the mapped TaskWarrior project name."""
+    def _resolve_tw_project(self, tt_task: dict, project_map: dict[str, str]) -> str | None:
+        """Resolve a TickTick task's project to the mapped TaskWarrior project name.
+
+        Returns None if no mapping exists, signalling the caller to skip this task.
+        """
         tt_project_name = project_map.get(tt_task.get("projectId", ""), "")
         tw_project = self._tt_to_tw.get(tt_project_name)
         if tw_project is None:
             logger.warning(
-                "No TW mapping for TickTick project %r (task %s) — using raw name",
+                "No TW mapping for TickTick project %r (task %s) — skipping",
                 tt_project_name, tt_task.get("id"),
             )
-            return tt_project_name
+            return None
         return tw_project
 
     async def _push_tt_to_tw(self, change: SyncChange, project_map: dict) -> None:
         tw_project = self._resolve_tw_project(change.tt_task, project_map)
+        if tw_project is None:
+            return
         tw_fields = ticktick_task_to_tw(change.tt_task, tw_project)
         self.tw.update_task(str(change.tw_task["uuid"]), tw_fields)
         self._update_mapping_timestamps(change)
@@ -212,6 +217,8 @@ class SyncEngine:
 
     async def _create_in_tw(self, change: SyncChange, project_map: dict) -> None:
         tw_project = self._resolve_tw_project(change.tt_task, project_map)
+        if tw_project is None:
+            return
         tw_fields = ticktick_task_to_tw(change.tt_task, tw_project)
         new_uuid = self.tw.create_task(tw_fields)
         self.store.upsert_mapping(TaskMapping(
