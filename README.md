@@ -85,7 +85,7 @@ tickticksync daemon status  # check if running
 tickticksync status         # show mapped task count and last sync time
 ```
 
-### Mapping
+### Managing mappings
 
 ```bash
 tickticksync mapping list                                        # show all project mappings
@@ -129,7 +129,7 @@ method = "oauth"                    # "oauth" (default) or "password"
 
 [sync]
 poll_interval = 60                  # seconds between full syncs
-batch_window = 5
+batch_window = 5                    # seconds to batch hook events
 socket_path = "/tmp/tickticksync.sock"
 queue_path = "~/.local/share/tickticksync/hook_queue.json"
 
@@ -150,6 +150,9 @@ taskwarrior = "personal"
 | `[ticktick]` | `client_id`, `client_secret` | TickTick OAuth app credentials |
 | `[auth]` | `method` | Authentication method: `"oauth"` or `"password"` |
 | `[sync]` | `poll_interval` | Seconds between daemon sync cycles |
+| `[sync]` | `batch_window` | Seconds to batch hook events before syncing |
+| `[sync]` | `socket_path` | Unix socket path for hook-to-daemon communication |
+| `[sync]` | `queue_path` | File path for queued events when daemon is down |
 | `[mapping]` | `default_project` | Fallback TickTick project for unmapped TW tasks |
 | `[[mapping.projects]]` | `ticktick`, `taskwarrior` | One-to-one project mapping pair |
 
