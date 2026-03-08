@@ -129,8 +129,9 @@ class SyncEngine:
         self._update_mapping_timestamps(change)
 
     async def _push_tt_to_tw(self, change: SyncChange, project_map: dict) -> None:
-        project_name = project_map.get(change.tt_task.get("projectId", ""), "")
-        tw_fields = ticktick_task_to_tw(change.tt_task, project_name)
+        tt_project_name = project_map.get(change.tt_task.get("projectId", ""), "")
+        tw_project = self._tt_to_tw.get(tt_project_name, tt_project_name)
+        tw_fields = ticktick_task_to_tw(change.tt_task, tw_project)
         self.tw.update_task(str(change.tw_task["uuid"]), tw_fields)
         self._update_mapping_timestamps(change)
 
@@ -143,11 +144,21 @@ class SyncEngine:
             await self._push_tt_to_tw(change, project_map)
 
     async def _create_in_tt(self, change: SyncChange, project_map: dict) -> None:
-        target = self._default_project.lower()
+        tw_project = change.tw_task.get("project", "")
+        tt_project_name = self._tw_to_tt.get(tw_project)
+        if tt_project_name is None:
+            logger.debug("Skipping TW task %s — project %r has no mapping", change.tw_task["uuid"], tw_project)
+            return
+
+        # Resolve TickTick project name → project ID
         project_id = next(
-            (pid for pid, name in project_map.items() if name.lower() == target),
-            next(iter(project_map), ""),
+            (pid for pid, name in project_map.items() if name == tt_project_name),
+            None,
         )
+        if project_id is None:
+            logger.warning("TickTick project %r not found in API response — skipping", tt_project_name)
+            return
+
         tt_fields = tw_task_to_ticktick(change.tw_task, project_id)
         created = await self.tt.create_task(tt_fields)
         self.store.upsert_mapping(TaskMapping(
@@ -160,8 +171,9 @@ class SyncEngine:
         ))
 
     async def _create_in_tw(self, change: SyncChange, project_map: dict) -> None:
-        project_name = project_map.get(change.tt_task.get("projectId", ""), "")
-        tw_fields = ticktick_task_to_tw(change.tt_task, project_name)
+        tt_project_name = project_map.get(change.tt_task.get("projectId", ""), "")
+        tw_project = self._tt_to_tw.get(tt_project_name, tt_project_name)
+        tw_fields = ticktick_task_to_tw(change.tt_task, tw_project)
         new_uuid = self.tw.create_task(tw_fields)
         self.store.upsert_mapping(TaskMapping(
             tw_uuid=new_uuid,

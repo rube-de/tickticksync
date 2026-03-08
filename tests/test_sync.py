@@ -140,7 +140,7 @@ async def test_apply_conflict_tw_newer_wins(engine, store):
 async def test_apply_new_tw_creates_in_ticktick(engine, store):
     engine.tt.create_task.return_value = {"id": "tt-new", "projectId": "proj-1", "modifiedTime": "x"}
     change = SyncChange(
-        tw_task={"uuid": "uuid-new", "description": "New", "modified": "2024-06-01T00:00:00Z", "status": "pending"},
+        tw_task={"uuid": "uuid-new", "description": "New", "modified": "2024-06-01T00:00:00Z", "status": "pending", "project": "work"},
         tt_task=None,
         mapping=None,
         kind=ChangeKind.NEW_TW,
@@ -231,3 +231,70 @@ async def test_empty_mappings_logs_warning_and_skips(store, caplog):
         changes = await engine.run_cycle()
     assert changes == []
     assert "no project mappings" in caplog.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_create_in_tt_uses_mapping(store):
+    """NEW_TW tasks are created in the TickTick project from the mapping."""
+    tw = MagicMock()
+    tt = AsyncMock()
+    tt.create_task.return_value = {"id": "tt-new", "projectId": "pid-work", "modifiedTime": "x"}
+    mappings = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=mappings)
+
+    change = SyncChange(
+        tw_task={"uuid": "u1", "description": "New task", "modified": "x", "status": "pending", "project": "work"},
+        tt_task=None,
+        mapping=None,
+        kind=ChangeKind.NEW_TW,
+    )
+    project_map = {"pid-work": "Work", "pid-personal": "Personal"}
+    await engine.apply_changes([change], project_map)
+
+    tt.create_task.assert_called_once()
+    call_args = tt.create_task.call_args[0][0]
+    assert call_args["projectId"] == "pid-work"
+
+
+@pytest.mark.asyncio
+async def test_create_in_tt_skips_unmapped_tw_project(store):
+    """NEW_TW tasks whose project doesn't match any mapping are skipped."""
+    tw = MagicMock()
+    tt = AsyncMock()
+    mappings = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=mappings)
+
+    change = SyncChange(
+        tw_task={"uuid": "u1", "description": "Unmapped", "modified": "x", "status": "pending", "project": "personal"},
+        tt_task=None,
+        mapping=None,
+        kind=ChangeKind.NEW_TW,
+    )
+    project_map = {"pid-work": "Work"}
+    await engine.apply_changes([change], project_map)
+
+    tt.create_task.assert_not_called()
+    assert store.get_by_tw_uuid("u1") is None
+
+
+@pytest.mark.asyncio
+async def test_create_in_tw_uses_mapped_project_name(store):
+    """NEW_TT tasks use the mapped TaskWarrior project name, not the TickTick name."""
+    tw = MagicMock()
+    tw.create_task.return_value = "uuid-created"
+    tt = AsyncMock()
+    mappings = [ProjectMapping(ticktick="My Work List", taskwarrior="work")]
+    engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=mappings)
+
+    change = SyncChange(
+        tw_task=None,
+        tt_task={"id": "tt-1", "title": "From TT", "status": 0, "projectId": "pid-1", "modifiedTime": "x"},
+        mapping=None,
+        kind=ChangeKind.NEW_TT,
+    )
+    project_map = {"pid-1": "My Work List"}
+    await engine.apply_changes([change], project_map)
+
+    tw.create_task.assert_called_once()
+    call_args = tw.create_task.call_args[0][0]
+    assert call_args["project"] == "work"
