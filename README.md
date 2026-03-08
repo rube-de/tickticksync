@@ -138,7 +138,7 @@ method = "oauth"                    # "oauth" (default) or "password"
 poll_interval = 60                  # seconds between full syncs
 batch_window = 5                    # reserved — not yet active
 socket_path = "/tmp/tickticksync.sock"
-queue_path = "/home/you/.local/share/tickticksync/hook_queue.json"  # use absolute path; ~ is not expanded
+queue_path = "/home/you/.local/share/tickticksync/hook_queue.json"  # use absolute path; ~ is not expanded (update after init)
 
 [mapping]
 default_project = "inbox"           # reserved — not yet active
@@ -160,7 +160,7 @@ taskwarrior = "personal"
 | `[sync]` | `poll_interval` | Seconds between daemon sync cycles |
 | `[sync]` | `batch_window` | Seconds to batch hook events before syncing (reserved — not yet active) |
 | `[sync]` | `socket_path` | Unix socket path for hook-to-daemon communication |
-| `[sync]` | `queue_path` | File path for queued events when daemon is down (use absolute path; `~` is not expanded) |
+| `[sync]` | `queue_path` | File path for queued events when daemon is down (use absolute path; `~` is not expanded — update after `init`) |
 | `[mapping]` | `default_project` | Fallback TickTick project for unmapped TW tasks (reserved — not yet active) |
 | `[[mapping.projects]]` | `ticktick`, `taskwarrior` | One-to-one project mapping pair |
 
