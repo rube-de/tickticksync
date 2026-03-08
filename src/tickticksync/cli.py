@@ -45,7 +45,11 @@ def _build_engine(cfg: Config) -> SyncEngine:
     tw = TaskWarriorClient()
     tt = _build_api(cfg)
     return SyncEngine(
-        store=state, tw=tw, tt=tt, default_project=cfg.mapping.default_project
+        store=state,
+        tw=tw,
+        tt=tt,
+        default_project=cfg.mapping.default_project,
+        project_mappings=cfg.mapping.projects,
     )
 
 
