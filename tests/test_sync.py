@@ -358,9 +358,10 @@ async def test_run_cycle_only_syncs_mapped_projects(store):
 
 
 @pytest.mark.asyncio
-async def test_mapped_tt_task_moved_to_unmapped_project_still_detected(store):
-    """A mapped TT task that moves to an unmapped project should still be
-    detected as TT_ONLY (not silently dropped by pre-filtering)."""
+async def test_mapped_tt_task_moved_to_unmapped_project_skipped(store):
+    """A mapped TT task that moves to an unmapped project should be skipped
+    at detection (symmetric with the TW-side guard), preventing repeated
+    stale detection and false CONFLICTs."""
     tw = MagicMock()
     tw.get_pending_tasks.return_value = [
         {"uuid": "uuid-1", "description": "Task", "modified": "2024-01-01T10:00:00Z", "project": "work"},
@@ -376,10 +377,9 @@ async def test_mapped_tt_task_moved_to_unmapped_project_still_detected(store):
     store.upsert_mapping(_mapping(ticktick_project="pid-1"))
 
     changes = await engine.run_cycle()
-    # The TT task changed (modifiedTime differs) — should be detected, not dropped
+    # TT task moved to unmapped project — guard skips change detection entirely
     tt_only = [c for c in changes if c.kind == "tt_only"]
-    assert len(tt_only) == 1
-    assert tt_only[0].tt_task["id"] == "tt-1"
+    assert len(tt_only) == 0
 
 
 @pytest.mark.asyncio

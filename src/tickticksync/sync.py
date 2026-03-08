@@ -78,6 +78,16 @@ class SyncEngine:
                     )
                     continue
 
+            # Skip mapped TT tasks that moved to an unmapped project
+            if tt_task is not None and mapped_tt_project_ids is not None:
+                tt_project_id = tt_task.get("projectId", "")
+                if tt_project_id not in mapped_tt_project_ids:
+                    logger.debug(
+                        "Skipping change detection for mapping %s — TT task moved to unmapped project %r",
+                        mapping.ticktick_id, tt_project_id,
+                    )
+                    continue
+
             tw_changed = tw_task and tw_task.get("modified") != mapping.tw_modified
             tt_changed = tt_task and tt_task.get("modifiedTime") != mapping.ticktick_modified
 
