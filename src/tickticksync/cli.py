@@ -295,13 +295,13 @@ def init() -> None:
         mapped_tw_names: set[str] = set()
 
         while True:
-            if not click.confirm("Add a project mapping?", default=True):
-                break
-
             # Show available (unmapped) projects
             unmapped = [p for p in tt_projects if p["name"] not in mapped_names]
             if not unmapped:
                 click.echo("All projects have been mapped.")
+                break
+
+            if not click.confirm("Add a project mapping?", default=True):
                 break
 
             for i, proj in enumerate(unmapped, 1):
