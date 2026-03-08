@@ -69,14 +69,14 @@ def test_conflict_detected_when_both_changed(engine, store):
     assert changes[0].kind == "conflict"
 
 
-def test_new_tw_task_detected(engine, store):
+def test_new_tw_task_detected(engine):
     tw_tasks = [{"uuid": "uuid-new", "description": "New task", "modified": "2024-06-01T00:00:00Z", "project": "work"}]
     tt_tasks = []
     changes = engine.detect_changes(tw_tasks, tt_tasks)
     assert any(c.kind == "new_tw" for c in changes)
 
 
-def test_new_tt_task_detected(engine, store):
+def test_new_tt_task_detected(engine):
     tw_tasks = []
     tt_tasks = [{"id": "tt-new", "title": "New", "projectId": "p1", "modifiedTime": "2024-06-01T00:00:00Z", "deleted": 0}]
     changes = engine.detect_changes(tw_tasks, tt_tasks, mapped_tt_project_ids={"p1"})

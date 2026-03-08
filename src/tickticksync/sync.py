@@ -161,10 +161,23 @@ class SyncEngine:
                     await self._create_in_tw(change, project_map)
 
     async def _push_tw_to_tt(self, change: SyncChange, project_map: dict) -> None:
-        tt_fields = tw_task_to_ticktick(change.tw_task, change.mapping.ticktick_project)
+        # Resolve current TW project to mapped TT project (handles project moves)
+        target_project = change.mapping.ticktick_project
+        tw_project = change.tw_task.get("project", "")
+        tt_project_name = self._tw_to_tt.get(tw_project)
+        if tt_project_name:
+            resolved_id = next(
+                (pid for pid, name in project_map.items() if name == tt_project_name),
+                None,
+            )
+            if resolved_id:
+                target_project = resolved_id
+
+        tt_fields = tw_task_to_ticktick(change.tw_task, target_project)
         await self.tt.update_task(
-            change.mapping.ticktick_id, change.mapping.ticktick_project, tt_fields
+            change.mapping.ticktick_id, target_project, tt_fields
         )
+        change.mapping.ticktick_project = target_project
         self._update_mapping_timestamps(change)
 
     def _resolve_tw_project(self, tt_task: dict, project_map: dict[str, str]) -> str | None:
