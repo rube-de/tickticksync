@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock
 from tickticksync.sync import SyncEngine, SyncChange, ChangeKind
 from tickticksync.state import StateStore, TaskMapping
+from tickticksync.config import ProjectMapping
 
 
 @pytest.fixture
@@ -162,3 +163,27 @@ async def test_apply_new_tt_creates_in_tw(engine, store):
     await engine.apply_changes([change], project_map)
     engine.tw.create_task.assert_called_once()
     assert store.get_by_ticktick_id("tt-new") is not None
+
+
+def test_engine_builds_lookup_dicts():
+    """SyncEngine builds tt_to_tw and tw_to_tt dicts from project mappings."""
+    store = MagicMock()
+    tw = MagicMock()
+    tt = AsyncMock()
+    mappings = [
+        ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
+        ProjectMapping(ticktick="Work", taskwarrior="work"),
+    ]
+    engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=mappings)
+    assert engine._tt_to_tw == {"Inbox": "inbox", "Work": "work"}
+    assert engine._tw_to_tt == {"inbox": "Inbox", "work": "Work"}
+
+
+def test_engine_accepts_empty_mappings():
+    """SyncEngine works with empty mappings list."""
+    store = MagicMock()
+    tw = MagicMock()
+    tt = AsyncMock()
+    engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=[])
+    assert engine._tt_to_tw == {}
+    assert engine._tw_to_tt == {}

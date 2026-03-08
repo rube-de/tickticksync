@@ -1,12 +1,16 @@
+import logging
 import time
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Optional
 
+from .config import ProjectMapping
 from .mapper import ticktick_task_to_tw, tw_task_to_ticktick
 from .state import StateStore, TaskMapping
 from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
+
+logger = logging.getLogger(__name__)
 
 
 class ChangeKind(StrEnum):
@@ -32,12 +36,16 @@ class SyncEngine:
         tw: TaskWarriorClient,
         tt: TickTickAPI,
         *,
+        project_mappings: list[ProjectMapping] | None = None,
         default_project: str = "inbox",
     ):
         self.store = store
         self.tw = tw
         self.tt = tt
         self._default_project = default_project
+        mappings = project_mappings or []
+        self._tt_to_tw: dict[str, str] = {m.ticktick: m.taskwarrior for m in mappings}
+        self._tw_to_tt: dict[str, str] = {m.taskwarrior: m.ticktick for m in mappings}
 
     def detect_changes(
         self, tw_tasks: list[dict], tt_tasks: list[dict]
