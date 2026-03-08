@@ -1,7 +1,8 @@
 # tests/test_config.py
 import pytest
+import tomlkit
 from pathlib import Path
-from tickticksync.config import load_config, save_config_auth, save_config_mapping, Config, SyncConfig, MappingConfig, ProjectMapping
+from tickticksync.config import load_config, save_config_auth, save_config_mapping, save_config_full, MappingConfig, ProjectMapping
 
 
 def test_load_minimal_config(tmp_config):
@@ -236,3 +237,77 @@ def test_save_config_mapping_creates_from_scratch(tmp_path):
     text = cfg_path.read_text()
     assert "ticktick" in text
     assert "taskwarrior" in text
+
+
+def test_save_config_full_writes_all_sections(tmp_path: Path):
+    """save_config_full writes a complete config with all sections."""
+    config_path = tmp_path / "config.toml"
+
+    save_config_full(
+        path=config_path,
+        client_id="my_cid",
+        client_secret="my_csec",
+        auth_method="oauth",
+        poll_interval=120,
+        socket_path="/tmp/custom.sock",
+        projects=[
+            ProjectMapping(ticktick="Inbox", taskwarrior="inbox"),
+            ProjectMapping(ticktick="Work", taskwarrior="work"),
+        ],
+    )
+
+    doc = tomlkit.parse(config_path.read_text())
+    assert doc["ticktick"]["client_id"] == "my_cid"
+    assert doc["ticktick"]["client_secret"] == "my_csec"
+    assert doc["auth"]["method"] == "oauth"
+    assert doc["sync"]["poll_interval"] == 120
+    assert doc["sync"]["batch_window"] == 5
+    assert doc["sync"]["socket_path"] == "/tmp/custom.sock"
+    assert doc["sync"]["queue_path"] == "~/.local/share/tickticksync/hook_queue.json"
+    assert doc["mapping"]["default_project"] == "inbox"
+    projects = doc["mapping"]["projects"]
+    assert len(projects) == 2
+    assert projects[0]["ticktick"] == "Inbox"
+    assert projects[1]["taskwarrior"] == "work"
+
+
+def test_save_config_full_with_password_auth(tmp_path: Path):
+    """save_config_full includes username when auth method is password."""
+    config_path = tmp_path / "config.toml"
+
+    save_config_full(
+        path=config_path,
+        client_id="cid",
+        client_secret="csec",
+        auth_method="password",
+        auth_username="user@example.com",
+        poll_interval=60,
+        socket_path="/tmp/tickticksync.sock",
+        projects=[],
+    )
+
+    doc = tomlkit.parse(config_path.read_text())
+    assert doc["auth"]["method"] == "password"
+    assert doc["auth"]["username"] == "user@example.com"
+
+
+def test_save_config_full_no_projects(tmp_path: Path):
+    """save_config_full works with empty project list."""
+    config_path = tmp_path / "config.toml"
+
+    save_config_full(
+        path=config_path,
+        client_id="cid",
+        client_secret="csec",
+        auth_method="oauth",
+        poll_interval=60,
+        socket_path="/tmp/tickticksync.sock",
+        projects=[],
+    )
+
+    doc = tomlkit.parse(config_path.read_text())
+    assert "ticktick" in doc
+    assert "auth" in doc
+    assert "sync" in doc
+    assert "mapping" in doc
+    assert doc["mapping"]["default_project"] == "inbox"

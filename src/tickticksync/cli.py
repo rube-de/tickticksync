@@ -14,7 +14,18 @@ import keyring
 import keyring.errors
 from ticktick_sdk.auth_cli import OAuth2Handler
 
-from .config import DEFAULT_CONFIG_PATH, Config, ProjectMapping, load_config, save_config_auth, save_config_mapping
+from .config import (
+    DEFAULT_CONFIG_PATH,
+    AuthConfig,
+    Config,
+    ProjectMapping,
+    SyncConfig,
+    TickTickConfig,
+    load_config,
+    save_config_auth,
+    save_config_full,
+    save_config_mapping,
+)
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
 from .ticktick import TickTickAPI
@@ -32,30 +43,7 @@ _OAUTH_REDIRECT_URI = "http://localhost:8080/callback"
 def _build_engine(cfg: Config) -> SyncEngine:
     state = StateStore(cfg.db_path)
     tw = TaskWarriorClient()
-
-    api_args = (cfg.ticktick.client_id, cfg.ticktick.client_secret, str(cfg.token_path))
-
-    if cfg.auth.method == "password":
-        username = cfg.auth.username
-        if not username:
-            raise click.ClickException(
-                "No username configured. Run `tickticksync auth password`."
-            )
-        try:
-            password = keyring.get_password(_KEYRING_SERVICE, username)
-        except keyring.errors.NoKeyringError:
-            raise click.ClickException(
-                "No system keyring available. Run `tickticksync auth password` on a"
-                " machine with a keyring (macOS Keychain or Linux Secret Service)."
-            )
-        if not password:
-            raise click.ClickException(
-                f"No stored password for {username!r}. Run `tickticksync auth password`."
-            )
-        tt = TickTickAPI(*api_args, username=username, password=password, use_v2_tasks=True)
-    else:
-        tt = TickTickAPI(*api_args)
-
+    tt = _build_api(cfg)
     return SyncEngine(
         store=state, tw=tw, tt=tt, default_project=cfg.mapping.default_project
     )
@@ -86,6 +74,18 @@ def _build_api(cfg: Config) -> TickTickAPI:
     return TickTickAPI(*api_args)
 
 
+def _fetch_ticktick_projects(api: TickTickAPI) -> list[dict]:
+    """Connect to TickTick, fetch all projects, then disconnect."""
+    async def _fetch() -> list[dict]:
+        await api.connect()
+        try:
+            return await api.get_projects()
+        finally:
+            await api.disconnect()
+
+    return asyncio.run(_fetch())
+
+
 def _read_pid() -> int | None:
     """Read PID from file and verify process exists. Cleans up stale files."""
     try:
@@ -114,14 +114,14 @@ def auth() -> None:
     """Authenticate with TickTick (OAuth or password)."""
 
 
-@auth.command("oauth")
-def auth_oauth() -> None:
-    """Run the browser OAuth2 flow and save the access token."""
-    config_path = DEFAULT_CONFIG_PATH
-    cfg = load_config(config_path)
+def _run_oauth_flow(tt_cfg: TickTickConfig, token_path: Path) -> Path:
+    """Run the browser OAuth2 flow and save the access token to *token_path*.
 
+    This is the reusable core shared by ``auth oauth`` and ``init``.
+    It does **not** update the config auth method — callers handle that.
+    """
     parsed_redirect = urlparse(_OAUTH_REDIRECT_URI)
-    handler = OAuth2Handler(cfg.ticktick.client_id, cfg.ticktick.client_secret, _OAUTH_REDIRECT_URI)
+    handler = OAuth2Handler(tt_cfg.client_id, tt_cfg.client_secret, _OAUTH_REDIRECT_URI)
     auth_url, state = handler.get_authorization_url()
 
     click.echo(f"\nOpen this URL in your browser:\n\n  {auth_url}\n")
@@ -165,11 +165,21 @@ def auth_oauth() -> None:
 
     token = asyncio.run(handler.exchange_code(captured["code"], captured["state"]))
 
-    token_path = cfg.token_path
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(json.dumps({"access_token": token.access_token}))
     token_path.chmod(0o600)
     click.echo(f"Token saved to {token_path}")
+
+    return token_path
+
+
+@auth.command("oauth")
+def auth_oauth() -> None:
+    """Run the browser OAuth2 flow and save the access token."""
+    config_path = DEFAULT_CONFIG_PATH
+    cfg = load_config(config_path)
+
+    _run_oauth_flow(cfg.ticktick, cfg.token_path)
 
     save_config_auth(config_path, "oauth")
     click.echo("Auth method set to 'oauth' in config.")
@@ -202,25 +212,11 @@ def auth_password() -> None:
 # init
 # ---------------------------------------------------------------------------
 
-@cli.command()
-def init() -> None:
-    """Set up OAuth credentials, register TW UDA, and install hooks."""
-    config_path = DEFAULT_CONFIG_PATH
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if not config_path.exists():
-        client_id = click.prompt("TickTick OAuth client_id")
-        client_secret = click.prompt("TickTick OAuth client_secret", hide_input=True)
-        config_path.write_text(
-            f'[ticktick]\nclient_id = "{client_id}"\nclient_secret = "{client_secret}"\n'
-        )
-        click.echo(f"Config written to {config_path}")
-
-    load_config(config_path)
-
+def _register_uda_and_hooks() -> None:
+    """Register the TW UDA and install hook scripts (idempotent)."""
     tw = TaskWarriorClient()
     tw.register_uda("ticktickid", "string", "TickTick ID")
-    click.echo("Registered TW UDA: ticktickid")
+    click.echo("✓ Registered TW UDA: ticktickid")
 
     HOOKS_DIR.mkdir(parents=True, exist_ok=True)
     for hook_name, entry in [
@@ -233,7 +229,126 @@ def init() -> None:
             f"#!/usr/bin/env python3\nfrom {module} import {func}\n{func}()\n"
         )
         hook_path.chmod(0o755)
-    click.echo(f"Hook scripts installed in {HOOKS_DIR}")
+    click.echo(f"✓ Hook scripts installed in {HOOKS_DIR}")
+
+
+@cli.command()
+def init() -> None:
+    """Interactive setup wizard for TickTickSync."""
+    config_path = DEFAULT_CONFIG_PATH
+
+    # --- Check existing config ---
+    if config_path.exists():
+        click.echo(f"\nConfig already exists at {config_path}")
+        if not click.confirm("Reconfigure?", default=False):
+            # Just run idempotent steps
+            _register_uda_and_hooks()
+            click.echo("\nRun `tickticksync daemon start` to begin syncing.")
+            return
+
+    # --- Step 1/4: Credentials ---
+    click.echo("\n── Step 1/4: TickTick API credentials ──")
+    client_id = click.prompt("Client ID")
+    client_secret = click.prompt("Client secret", hide_input=True)
+
+    tt_cfg = TickTickConfig(client_id=client_id, client_secret=client_secret)
+    auth_method = "oauth"
+    tmp_cfg = Config(ticktick=tt_cfg, auth=AuthConfig(method=auth_method))
+
+    # --- Step 2/4: OAuth ---
+    click.echo("\n── Step 2/4: OAuth authentication ──")
+    try:
+        _run_oauth_flow(tt_cfg, tmp_cfg.token_path)
+    except click.Abort:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"OAuth authentication failed: {exc}")
+        if not click.confirm("Skip auth for now?", default=True):
+            raise click.ClickException(str(exc)) from exc
+        click.echo(
+            "You can authenticate later with: tickticksync auth oauth"
+        )
+
+    # --- Step 3/4: Sync settings ---
+    click.echo("\n── Step 3/4: Sync settings ──")
+    poll_interval = click.prompt("Poll interval (seconds)", default=SyncConfig.poll_interval, type=int)
+    socket_path = click.prompt("Socket path", default=SyncConfig.socket_path)
+
+    # --- Step 4/4: Project mappings ---
+    click.echo("\n── Step 4/4: Project mappings ──")
+    projects: list[ProjectMapping] = []
+
+    # Try to fetch projects from TickTick
+    tt_projects: list[dict] | None = None
+    try:
+        api = _build_api(tmp_cfg)
+        tt_projects = _fetch_ticktick_projects(api)
+    except Exception as exc:  # noqa: BLE001
+        click.echo(
+            f"Could not fetch TickTick projects: {exc}\n"
+            "(If auth is not yet configured, this is expected.)"
+        )
+        click.echo("You can add mappings later with: tickticksync mapping add")
+
+    if tt_projects is not None:
+        mapped_names: set[str] = set()
+        mapped_tw_names: set[str] = set()
+
+        while True:
+            # Show available (unmapped) projects
+            unmapped = [p for p in tt_projects if p["name"] not in mapped_names]
+            if not unmapped:
+                click.echo("All projects have been mapped.")
+                break
+
+            if not click.confirm("Add a project mapping?", default=True):
+                break
+
+            for i, proj in enumerate(unmapped, 1):
+                click.echo(f"  {i}. {proj['name']}")
+
+            choice = click.prompt("Select project", type=int, default=1)
+            if choice < 1 or choice > len(unmapped):
+                click.echo(f"Invalid selection: {choice}")
+                continue
+
+            selected = unmapped[choice - 1]
+            default_tw = selected["name"].lower()
+            tw_name = click.prompt(
+                "TaskWarrior project name", default=default_tw
+            ).strip()
+
+            if not tw_name:
+                click.echo("TaskWarrior project name cannot be empty.")
+                continue
+
+            if tw_name in mapped_tw_names:
+                click.echo(
+                    f'TaskWarrior project "{tw_name}" is already used.'
+                )
+                continue
+
+            projects.append(
+                ProjectMapping(ticktick=selected["name"], taskwarrior=tw_name)
+            )
+            mapped_names.add(selected["name"])
+            mapped_tw_names.add(tw_name)
+
+    # --- Save config ---
+    save_config_full(
+        config_path,
+        client_id=client_id,
+        client_secret=client_secret,
+        auth_method=auth_method,
+        poll_interval=poll_interval,
+        socket_path=socket_path,
+        projects=projects,
+    )
+    click.echo(f"\n✓ Config saved to {config_path}")
+
+    # --- UDA & hooks ---
+    _register_uda_and_hooks()
+
     click.echo("\nRun `tickticksync daemon start` to begin syncing.")
 
 
@@ -403,16 +518,9 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
     # Interactive mode — fetch projects from TickTick API
     tt = _build_api(cfg)
 
-    async def _fetch() -> list[dict]:
-        await tt.connect()
-        try:
-            return await tt.get_projects()
-        finally:
-            await tt.disconnect()
-
     click.echo("Fetching TickTick projects...")
     try:
-        all_projects = asyncio.run(_fetch())
+        all_projects = _fetch_ticktick_projects(tt)
     except Exception as exc:
         raise click.ClickException(f"Failed to fetch TickTick projects: {exc}") from exc
     unmapped = [p for p in all_projects if p["name"] not in mapped_names]

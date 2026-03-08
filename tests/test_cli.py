@@ -1,9 +1,10 @@
+import click
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from click.testing import CliRunner
 from tickticksync.cli import cli
-from tickticksync.config import Config, ProjectMapping, TickTickConfig
+from tickticksync.config import Config, ProjectMapping, SyncConfig, TickTickConfig
 
 
 @pytest.fixture
@@ -146,6 +147,86 @@ def test_auth_oauth_timeout_exits_with_error(runner, tmp_path):
 
     assert result.exit_code == 1
     assert "No OAuth code" in result.output
+
+
+# ---------------------------------------------------------------------------
+# _run_oauth_flow helper
+# ---------------------------------------------------------------------------
+
+def test_run_oauth_flow_returns_token_path(runner, tmp_path):
+    """_run_oauth_flow runs the browser flow and returns the token path."""
+    from tickticksync.cli import _run_oauth_flow
+    from tickticksync.config import TickTickConfig
+    from io import BytesIO
+
+    token_path = tmp_path / "token.json"
+    tt_cfg = TickTickConfig(client_id="cid", client_secret="csec")
+
+    mock_handler = MagicMock()
+    mock_handler.get_authorization_url.return_value = ("https://auth.url", "st8")
+    mock_token = MagicMock()
+    mock_token.access_token = "tok123"
+    mock_handler.exchange_code = AsyncMock(return_value=mock_token)
+
+    # Capture the handler class passed to HTTPServer so we can simulate
+    # a callback request that populates the ``captured`` dict.
+    handler_cls_holder = {}
+
+    def _fake_http_server(addr, handler_cls):
+        handler_cls_holder["cls"] = handler_cls
+        return MagicMock()
+
+    def _fake_wait(timeout=None):
+        # Simulate the browser redirect hitting the callback server by
+        # instantiating the handler class with a mock request.
+        cls = handler_cls_holder["cls"]
+        fake_request = MagicMock()
+        fake_request.makefile.return_value = BytesIO(
+            b"GET /callback?code=authcode123&state=st8 HTTP/1.1\r\n\r\n"
+        )
+        cls(fake_request, ("127.0.0.1", 9999), MagicMock())
+        return True
+
+    mock_event = MagicMock()
+    mock_event.wait = _fake_wait
+
+    with (
+        patch("tickticksync.cli.webbrowser.open"),
+        patch("tickticksync.cli.OAuth2Handler", return_value=mock_handler),
+        patch("tickticksync.cli.http.server.HTTPServer", side_effect=_fake_http_server),
+        patch("tickticksync.cli.threading.Thread"),
+        patch("tickticksync.cli.threading.Event", return_value=mock_event),
+        patch("tickticksync.cli.asyncio.run", return_value=mock_token),
+    ):
+        result_path = _run_oauth_flow(tt_cfg, token_path)
+
+    assert result_path == token_path
+    assert token_path.exists()
+    import json
+    assert json.loads(token_path.read_text())["access_token"] == "tok123"
+
+
+# ---------------------------------------------------------------------------
+# _fetch_ticktick_projects helper
+# ---------------------------------------------------------------------------
+
+def test_fetch_ticktick_projects_returns_list(tmp_path):
+    """_fetch_ticktick_projects returns the project list from the API."""
+    from tickticksync.cli import _fetch_ticktick_projects
+
+    mock_api = MagicMock()
+    mock_api.connect = AsyncMock()
+    mock_api.disconnect = AsyncMock()
+    mock_api.get_projects = AsyncMock(return_value=[
+        {"id": "1", "name": "Inbox"},
+        {"id": "2", "name": "Work"},
+    ])
+
+    projects = _fetch_ticktick_projects(mock_api)
+    assert len(projects) == 2
+    assert projects[0]["name"] == "Inbox"
+    mock_api.connect.assert_awaited_once()
+    mock_api.disconnect.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -365,3 +446,221 @@ def test_mapping_add_interactive_duplicate_taskwarrior(runner, tmp_path):
 
     assert result.exit_code != 0
     assert "already used" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# init wizard
+# ---------------------------------------------------------------------------
+
+def test_init_fresh_prompts_credentials(runner, tmp_path):
+    """Fresh init prompts for client_id and client_secret."""
+    config_path = tmp_path / "config.toml"
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("OAuth skipped")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        result = runner.invoke(cli, ["init"], input="my_client_id\nmy_secret\ny\n\n\ny\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Step 1/4" in result.output
+    save_kwargs = mock_save.call_args[1]
+    assert save_kwargs["client_id"] == "my_client_id"
+    assert save_kwargs["client_secret"] == "my_secret"
+
+
+def test_init_fresh_sync_settings_defaults(runner, tmp_path):
+    """Init step 3 accepts default sync settings when user presses Enter."""
+    config_path = tmp_path / "config.toml"
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("OAuth skipped")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        result = runner.invoke(cli, ["init"], input="cid\ncsec\ny\n\n\ny\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Step 3/4" in result.output
+    save_kwargs = mock_save.call_args[1]
+    assert save_kwargs["poll_interval"] == SyncConfig.poll_interval
+    assert save_kwargs["socket_path"] == SyncConfig.socket_path
+
+
+def test_init_fresh_sync_settings_custom(runner, tmp_path):
+    """Init step 3 accepts custom sync settings."""
+    config_path = tmp_path / "config.toml"
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("OAuth skipped")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        result = runner.invoke(cli, ["init"], input="cid\ncsec\ny\n120\n/tmp/custom.sock\ny\n")
+
+    assert result.exit_code == 0, result.output
+    save_kwargs = mock_save.call_args[1]
+    assert save_kwargs["poll_interval"] == 120
+    assert save_kwargs["socket_path"] == "/tmp/custom.sock"
+
+
+def test_init_fresh_oauth_success(runner, tmp_path):
+    """Init step 2 runs OAuth flow and reports success."""
+    config_path = tmp_path / "config.toml"
+    token_path = tmp_path / "token.json"
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli._run_oauth_flow", return_value=token_path) as mock_oauth,
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        result = runner.invoke(cli, ["init"], input="cid\ncsec\n\n\ny\n")
+
+    assert result.exit_code == 0, result.output
+    assert "Step 2/4" in result.output
+    mock_oauth.assert_called_once()
+    save_kwargs = mock_save.call_args[1]
+    assert save_kwargs["auth_method"] == "oauth"
+
+
+def test_init_oauth_failure_continues(runner, tmp_path):
+    """If OAuth fails, init continues and tells user to run auth later."""
+    config_path = tmp_path / "config.toml"
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_full"),
+        patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("No OAuth code received")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        result = runner.invoke(cli, ["init"], input="cid\ncsec\ny\n\n\ny\n")
+
+    assert result.exit_code == 0, result.output
+    assert "tickticksync auth oauth" in result.output
+
+
+def test_init_fresh_mapping_wizard(runner, tmp_path):
+    """Init step 4 fetches projects and allows mapping selection."""
+    config_path = tmp_path / "config.toml"
+    token_path = tmp_path / "token.json"
+
+    mock_api = MagicMock()
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli._run_oauth_flow", return_value=token_path),
+        patch("tickticksync.cli._build_api", return_value=mock_api),
+        patch("tickticksync.cli._fetch_ticktick_projects", return_value=[
+            {"id": "1", "name": "Inbox"},
+            {"id": "2", "name": "Work"},
+            {"id": "3", "name": "Personal"},
+        ]),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        # Input: cid, csec, poll(default), socket(default),
+        # mapping: add? y, select 1 (Inbox), accept default, add more? y,
+        # select 1 (Work), accept default, add more? n
+        result = runner.invoke(
+            cli, ["init"],
+            input="cid\ncsec\n\n\ny\n1\n\ny\n1\n\nn\n",
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Step 4/4" in result.output
+    save_kwargs = mock_save.call_args[1]
+    projects = save_kwargs["projects"]
+    assert len(projects) == 2
+    assert projects[0].ticktick == "Inbox"
+    assert projects[0].taskwarrior == "inbox"
+    assert projects[1].ticktick == "Work"
+    assert projects[1].taskwarrior == "work"
+
+
+def test_init_skip_mapping(runner, tmp_path):
+    """Init step 4 can be skipped entirely."""
+    config_path = tmp_path / "config.toml"
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("OAuth skipped")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        result = runner.invoke(cli, ["init"], input="cid\ncsec\ny\n\n\ny\n")
+
+    assert result.exit_code == 0, result.output
+    save_kwargs = mock_save.call_args[1]
+    assert save_kwargs["projects"] == []
+
+
+def test_init_existing_config_asks_reconfigure(runner, tmp_path):
+    """Re-running init on existing config asks before overwriting."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[ticktick]\nclient_id = "old_cid"\nclient_secret = "old_csec"\n')
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("skip")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        result = runner.invoke(cli, ["init"], input="y\nnew_cid\nnew_csec\ny\n\n\ny\n")
+
+    assert result.exit_code == 0, result.output
+    assert "already exists" in result.output.lower()
+    save_kwargs = mock_save.call_args[1]
+    assert save_kwargs["client_id"] == "new_cid"
+
+
+def test_init_existing_config_skip_reconfigure(runner, tmp_path):
+    """Re-running init with 'n' skips to UDA/hooks (idempotent steps)."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[ticktick]\nclient_id = "cid"\nclient_secret = "csec"\n')
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        result = runner.invoke(cli, ["init"], input="n\n")
+
+    assert result.exit_code == 0, result.output
+    mock_save.assert_not_called()
