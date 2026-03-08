@@ -2,7 +2,7 @@
 import pytest
 import tomlkit
 from pathlib import Path
-from tickticksync.config import load_config, save_config_auth, save_config_mapping, save_config_full, MappingConfig, ProjectMapping
+from tickticksync.config import load_config, save_config_auth, save_config_mapping, save_config_full, MappingConfig, ProjectMapping, SyncConfig
 
 
 def test_load_minimal_config(tmp_config):
@@ -261,9 +261,9 @@ def test_save_config_full_writes_all_sections(tmp_path: Path):
     assert doc["ticktick"]["client_secret"] == "my_csec"
     assert doc["auth"]["method"] == "oauth"
     assert doc["sync"]["poll_interval"] == 120
-    assert doc["sync"]["batch_window"] == 5
+    assert doc["sync"]["batch_window"] == SyncConfig.batch_window
     assert doc["sync"]["socket_path"] == "/tmp/custom.sock"
-    assert doc["sync"]["queue_path"] == "~/.local/share/tickticksync/hook_queue.json"
+    assert doc["sync"]["queue_path"] == SyncConfig.queue_path
     assert doc["mapping"]["default_project"] == "inbox"
     projects = doc["mapping"]["projects"]
     assert len(projects) == 2

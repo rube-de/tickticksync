@@ -153,7 +153,7 @@ def test_auth_oauth_timeout_exits_with_error(runner, tmp_path):
 # _run_oauth_flow helper
 # ---------------------------------------------------------------------------
 
-def test_run_oauth_flow_returns_token_path(runner, tmp_path):
+def test_run_oauth_flow_returns_token_path(tmp_path):
     """_run_oauth_flow runs the browser flow and returns the token path."""
     from tickticksync.cli import _run_oauth_flow
     from tickticksync.config import TickTickConfig
@@ -210,7 +210,7 @@ def test_run_oauth_flow_returns_token_path(runner, tmp_path):
 # _fetch_ticktick_projects helper
 # ---------------------------------------------------------------------------
 
-def test_fetch_ticktick_projects_returns_list(tmp_path):
+def test_fetch_ticktick_projects_returns_list():
     """_fetch_ticktick_projects returns the project list from the API."""
     from tickticksync.cli import _fetch_ticktick_projects
 
