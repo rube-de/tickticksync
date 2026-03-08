@@ -382,6 +382,10 @@ def daemon() -> None:
 def daemon_start() -> None:
     """Start the background sync daemon."""
     cfg = load_config()
+    if not cfg.mapping.projects:
+        raise click.ClickException(
+            "No project mappings configured. Run `tickticksync mapping add` first."
+        )
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     pid = os.fork()

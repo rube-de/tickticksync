@@ -101,6 +101,13 @@ class SyncEngine:
                 if mapped_tt_project_ids is not None:
                     if tt_task.get("projectId") not in mapped_tt_project_ids:
                         continue
+                elif self._tt_to_tw:
+                    logger.debug(
+                        "Skipping NEW_TT for task %s — "
+                        "mapped_tt_project_ids not provided",
+                        tt_task["id"],
+                    )
+                    continue
                 changes.append(SyncChange(None, tt_task, None, ChangeKind.NEW_TT))
 
         return changes
@@ -153,7 +160,14 @@ class SyncEngine:
     def _resolve_tw_project(self, tt_task: dict, project_map: dict[str, str]) -> str:
         """Resolve a TickTick task's project to the mapped TaskWarrior project name."""
         tt_project_name = project_map.get(tt_task.get("projectId", ""), "")
-        return self._tt_to_tw.get(tt_project_name, tt_project_name)
+        tw_project = self._tt_to_tw.get(tt_project_name)
+        if tw_project is None:
+            logger.warning(
+                "No TW mapping for TickTick project %r (task %s) — using raw name",
+                tt_project_name, tt_task.get("id"),
+            )
+            return tt_project_name
+        return tw_project
 
     async def _push_tt_to_tw(self, change: SyncChange, project_map: dict) -> None:
         tw_project = self._resolve_tw_project(change.tt_task, project_map)
