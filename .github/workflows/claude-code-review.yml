@@ -16,6 +16,9 @@ jobs:
       github.event.pull_request.user.login == 'rube-de' ||
       github.event.pull_request.user.login == 'funny-otter'
 
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
       contents: read
