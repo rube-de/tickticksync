@@ -1,3 +1,4 @@
+import logging
 import time
 import pytest
 from unittest.mock import MagicMock, AsyncMock
@@ -35,7 +36,7 @@ def _mapping(**kwargs) -> TaskMapping:
 
 def test_no_changes_when_unmodified(engine, store):
     store.upsert_mapping(_mapping())
-    tw_tasks = [{"uuid": "uuid-1", "description": "Task", "modified": "2024-01-01T10:00:00Z"}]
+    tw_tasks = [{"uuid": "uuid-1", "description": "Task", "modified": "2024-01-01T10:00:00Z", "project": "work"}]
     tt_tasks = [{"id": "tt-1", "title": "Task", "modifiedTime": "2024-01-01T10:00:00Z"}]
     changes = engine.detect_changes(tw_tasks, tt_tasks)
     assert changes == []
@@ -43,7 +44,7 @@ def test_no_changes_when_unmodified(engine, store):
 
 def test_tw_only_change_detected(engine, store):
     store.upsert_mapping(_mapping())
-    tw_tasks = [{"uuid": "uuid-1", "description": "Updated", "modified": "2024-06-01T10:00:00Z"}]
+    tw_tasks = [{"uuid": "uuid-1", "description": "Updated", "modified": "2024-06-01T10:00:00Z", "project": "work"}]
     tt_tasks = [{"id": "tt-1", "title": "Task", "modifiedTime": "2024-01-01T10:00:00Z"}]
     changes = engine.detect_changes(tw_tasks, tt_tasks)
     assert len(changes) == 1
@@ -52,7 +53,7 @@ def test_tw_only_change_detected(engine, store):
 
 def test_tt_only_change_detected(engine, store):
     store.upsert_mapping(_mapping())
-    tw_tasks = [{"uuid": "uuid-1", "description": "Task", "modified": "2024-01-01T10:00:00Z"}]
+    tw_tasks = [{"uuid": "uuid-1", "description": "Task", "modified": "2024-01-01T10:00:00Z", "project": "work"}]
     tt_tasks = [{"id": "tt-1", "title": "Updated", "modifiedTime": "2024-06-01T10:00:00Z"}]
     changes = engine.detect_changes(tw_tasks, tt_tasks)
     assert len(changes) == 1
@@ -61,7 +62,7 @@ def test_tt_only_change_detected(engine, store):
 
 def test_conflict_detected_when_both_changed(engine, store):
     store.upsert_mapping(_mapping())
-    tw_tasks = [{"uuid": "uuid-1", "modified": "2024-06-01T00:00:00Z"}]
+    tw_tasks = [{"uuid": "uuid-1", "modified": "2024-06-01T00:00:00Z", "project": "work"}]
     tt_tasks = [{"id": "tt-1", "modifiedTime": "2024-06-02T00:00:00Z"}]
     changes = engine.detect_changes(tw_tasks, tt_tasks)
     assert len(changes) == 1
@@ -226,7 +227,6 @@ async def test_empty_mappings_logs_warning_and_skips(store, caplog):
     )
     engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=[])
 
-    import logging
     with caplog.at_level(logging.WARNING):
         changes = await engine.run_cycle()
     assert changes == []
@@ -355,6 +355,49 @@ async def test_run_cycle_only_syncs_mapped_projects(store):
     # Only u1's mapping was persisted
     assert store.get_by_tw_uuid("u1") is not None
     assert store.get_by_tw_uuid("u2") is None
+
+
+@pytest.mark.asyncio
+async def test_mapped_tt_task_moved_to_unmapped_project_still_detected(store):
+    """A mapped TT task that moves to an unmapped project should still be
+    detected as TT_ONLY (not silently dropped by pre-filtering)."""
+    tw = MagicMock()
+    tw.get_pending_tasks.return_value = [
+        {"uuid": "uuid-1", "description": "Task", "modified": "2024-01-01T10:00:00Z", "project": "work"},
+    ]
+    tt = AsyncMock()
+    # Task moved from "Work" (pid-1) to "Personal" (pid-2, unmapped)
+    tt.get_all_tasks.return_value = (
+        [{"id": "tt-1", "title": "Moved", "projectId": "pid-2", "modifiedTime": "2024-06-01T00:00:00Z"}],
+        {"pid-1": "Work", "pid-2": "Personal"},
+    )
+    mappings = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=mappings)
+    store.upsert_mapping(_mapping(ticktick_project="pid-1"))
+
+    changes = await engine.run_cycle()
+    # The TT task changed (modifiedTime differs) — should be detected, not dropped
+    tt_only = [c for c in changes if c.kind == "tt_only"]
+    assert len(tt_only) == 1
+    assert tt_only[0].tt_task["id"] == "tt-1"
+
+
+@pytest.mark.asyncio
+async def test_new_tt_from_unmapped_project_filtered_by_project_ids(store):
+    """NEW_TT tasks from unmapped projects are skipped when mapped_tt_project_ids is provided."""
+    tw = MagicMock()
+    tt = AsyncMock()
+    mappings = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=mappings)
+
+    tt_tasks = [
+        {"id": "tt-1", "title": "Mapped", "projectId": "pid-1", "modifiedTime": "x"},
+        {"id": "tt-2", "title": "Unmapped", "projectId": "pid-2", "modifiedTime": "x"},
+    ]
+    changes = engine.detect_changes([], tt_tasks, mapped_tt_project_ids={"pid-1"})
+    new_tt = [c for c in changes if c.kind == "new_tt"]
+    assert len(new_tt) == 1
+    assert new_tt[0].tt_task["id"] == "tt-1"
 
 
 @pytest.mark.asyncio

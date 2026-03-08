@@ -359,6 +359,10 @@ def init() -> None:
 def sync() -> None:
     """Run one full sync cycle (no daemon required)."""
     cfg = load_config()
+    if not cfg.mapping.projects:
+        raise click.ClickException(
+            "No project mappings configured. Run `tickticksync mapping add` first."
+        )
     engine = _build_engine(cfg)
 
     async def _run() -> None:

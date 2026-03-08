@@ -44,9 +44,17 @@ class SyncEngine:
         mappings = project_mappings or []
         self._tt_to_tw: dict[str, str] = {m.ticktick: m.taskwarrior for m in mappings}
         self._tw_to_tt: dict[str, str] = {m.taskwarrior: m.ticktick for m in mappings}
+        if len(self._tt_to_tw) != len(mappings) or len(self._tw_to_tt) != len(mappings):
+            raise ValueError(
+                "Project mappings must be one-to-one; duplicate TickTick or TaskWarrior names found."
+            )
 
     def detect_changes(
-        self, tw_tasks: list[dict], tt_tasks: list[dict]
+        self,
+        tw_tasks: list[dict],
+        tt_tasks: list[dict],
+        *,
+        mapped_tt_project_ids: set[str] | None = None,
     ) -> list[SyncChange]:
         changes: list[SyncChange] = []
         tw_by_uuid = {str(t["uuid"]): t for t in tw_tasks}
@@ -59,6 +67,12 @@ class SyncEngine:
             mapped_tt_ids.add(mapping.ticktick_id)
             tw_task = tw_by_uuid.get(mapping.tw_uuid)
             tt_task = tt_by_id.get(mapping.ticktick_id)
+
+            # Skip mapped TW tasks that moved to an unmapped project
+            if tw_task is not None and self._tt_to_tw:
+                tw_project = tw_task.get("project", "")
+                if tw_project not in self._tw_to_tt:
+                    continue
 
             tw_changed = tw_task and tw_task.get("modified") != mapping.tw_modified
             tt_changed = tt_task and tt_task.get("modifiedTime") != mapping.ticktick_modified
@@ -73,18 +87,22 @@ class SyncEngine:
         for tw_task in tw_tasks:
             if str(tw_task["uuid"]) not in mapped_tw_uuids and not tw_task.get("ticktickid"):
                 tw_project = tw_task.get("project", "")
-                if self._tw_to_tt and tw_project not in self._tw_to_tt:
+                if not self._tt_to_tw or tw_project not in self._tw_to_tt:
                     continue
                 changes.append(SyncChange(tw_task, None, None, ChangeKind.NEW_TW))
 
         for tt_task in tt_tasks:
             if tt_task["id"] not in mapped_tt_ids and not tt_task.get("deleted"):
+                # Only import new TT tasks from mapped projects
+                if mapped_tt_project_ids is not None:
+                    if tt_task.get("projectId") not in mapped_tt_project_ids:
+                        continue
                 changes.append(SyncChange(None, tt_task, None, ChangeKind.NEW_TT))
 
         return changes
 
     async def run_cycle(self, tw_tasks: list[dict] | None = None) -> list[SyncChange]:
-        """Run a full sync cycle: fetch, detect, apply. Returns applied changes."""
+        """Run a full sync cycle: fetch, detect, apply. Returns detected changes."""
         if not self._tt_to_tw:
             logger.warning("No project mappings configured — skipping sync cycle")
             return []
@@ -93,15 +111,14 @@ class SyncEngine:
             tw_tasks = self.tw.get_pending_tasks()
         tt_tasks, project_map = await self.tt.get_all_tasks()
 
-        # Build set of mapped TickTick project IDs
+        # Build set of mapped TickTick project IDs (used to gate NEW_TT only)
         mapped_tt_project_ids = {
             pid for pid, name in project_map.items() if name in self._tt_to_tw
         }
 
-        # Filter TickTick tasks to mapped projects only
-        tt_tasks = [t for t in tt_tasks if t.get("projectId") in mapped_tt_project_ids]
-
-        changes = self.detect_changes(tw_tasks, tt_tasks)
+        changes = self.detect_changes(
+            tw_tasks, tt_tasks, mapped_tt_project_ids=mapped_tt_project_ids
+        )
         with self.store.batch():
             await self.apply_changes(changes, project_map)
         return changes
