@@ -74,6 +74,9 @@ class SyncEngine:
 
         for tw_task in tw_tasks:
             if str(tw_task["uuid"]) not in mapped_tw_uuids and not tw_task.get("ticktickid"):
+                tw_project = tw_task.get("project", "")
+                if self._tw_to_tt and tw_project not in self._tw_to_tt:
+                    continue
                 changes.append(SyncChange(tw_task, None, None, ChangeKind.NEW_TW))
 
         for tt_task in tt_tasks:
