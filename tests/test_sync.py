@@ -17,7 +17,8 @@ def store(tmp_db):
 def engine(store):
     tw = MagicMock()
     tt = AsyncMock()
-    return SyncEngine(store=store, tw=tw, tt=tt)
+    mappings = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    return SyncEngine(store=store, tw=tw, tt=tt, project_mappings=mappings)
 
 
 def _mapping(**kwargs) -> TaskMapping:
@@ -187,3 +188,46 @@ def test_engine_accepts_empty_mappings():
     engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=[])
     assert engine._tt_to_tw == {}
     assert engine._tw_to_tt == {}
+
+
+@pytest.mark.asyncio
+async def test_pull_filters_unmapped_ticktick_projects(store):
+    """Tasks from unmapped TickTick projects are ignored during pull."""
+    tw = MagicMock()
+    tw.get_pending_tasks.return_value = []
+    tw.create_task.return_value = "uuid-created"
+    tt = AsyncMock()
+    tt.get_all_tasks.return_value = (
+        [
+            {"id": "tt-1", "title": "Mapped", "projectId": "pid-1", "modifiedTime": "x"},
+            {"id": "tt-2", "title": "Unmapped", "projectId": "pid-2", "modifiedTime": "x"},
+        ],
+        {"pid-1": "Work", "pid-2": "Personal"},
+    )
+    mappings = [ProjectMapping(ticktick="Work", taskwarrior="work")]
+    engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=mappings)
+
+    changes = await engine.run_cycle()
+    # Only the mapped project's task should produce a NEW_TT change
+    new_tt = [c for c in changes if c.kind == "new_tt"]
+    assert len(new_tt) == 1
+    assert new_tt[0].tt_task["id"] == "tt-1"
+
+
+@pytest.mark.asyncio
+async def test_empty_mappings_logs_warning_and_skips(store, caplog):
+    """Empty mappings list results in warning and no sync."""
+    tw = MagicMock()
+    tw.get_pending_tasks.return_value = [{"uuid": "u1", "description": "X", "modified": "x"}]
+    tt = AsyncMock()
+    tt.get_all_tasks.return_value = (
+        [{"id": "tt-1", "title": "T", "projectId": "p1", "modifiedTime": "x"}],
+        {"p1": "Inbox"},
+    )
+    engine = SyncEngine(store=store, tw=tw, tt=tt, project_mappings=[])
+
+    import logging
+    with caplog.at_level(logging.WARNING):
+        changes = await engine.run_cycle()
+    assert changes == []
+    assert "no project mappings" in caplog.text.lower()

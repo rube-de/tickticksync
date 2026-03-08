@@ -84,9 +84,22 @@ class SyncEngine:
 
     async def run_cycle(self, tw_tasks: list[dict] | None = None) -> list[SyncChange]:
         """Run a full sync cycle: fetch, detect, apply. Returns applied changes."""
+        if not self._tt_to_tw:
+            logger.warning("No project mappings configured — skipping sync cycle")
+            return []
+
         if tw_tasks is None:
             tw_tasks = self.tw.get_pending_tasks()
         tt_tasks, project_map = await self.tt.get_all_tasks()
+
+        # Build set of mapped TickTick project IDs
+        mapped_tt_project_ids = {
+            pid for pid, name in project_map.items() if name in self._tt_to_tw
+        }
+
+        # Filter TickTick tasks to mapped projects only
+        tt_tasks = [t for t in tt_tasks if t.get("projectId") in mapped_tt_project_ids]
+
         changes = self.detect_changes(tw_tasks, tt_tasks)
         with self.store.batch():
             await self.apply_changes(changes, project_map)
