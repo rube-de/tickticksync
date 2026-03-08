@@ -85,6 +85,13 @@ tickticksync daemon status  # check if running
 tickticksync status         # show mapped task count and last sync time
 ```
 
+### Authentication
+
+```bash
+tickticksync auth oauth     # re-run the browser OAuth2 flow
+tickticksync auth password  # store username/password credentials in the system keyring
+```
+
 ### Managing mappings
 
 ```bash
@@ -129,12 +136,12 @@ method = "oauth"                    # "oauth" (default) or "password"
 
 [sync]
 poll_interval = 60                  # seconds between full syncs
-batch_window = 5                    # seconds to batch hook events
+batch_window = 5                    # reserved — not yet active
 socket_path = "/tmp/tickticksync.sock"
-queue_path = "~/.local/share/tickticksync/hook_queue.json"
+queue_path = "/home/you/.local/share/tickticksync/hook_queue.json"  # use absolute path; ~ is not expanded
 
 [mapping]
-default_project = "inbox"           # TickTick project for new TW tasks without a mapping
+default_project = "inbox"           # reserved — not yet active
 
 [[mapping.projects]]
 ticktick = "Work"
@@ -149,11 +156,12 @@ taskwarrior = "personal"
 |---------|-----|-------------|
 | `[ticktick]` | `client_id`, `client_secret` | TickTick OAuth app credentials |
 | `[auth]` | `method` | Authentication method: `"oauth"` or `"password"` |
+| `[auth]` | `username` | TickTick username (email) for `"password"` auth method |
 | `[sync]` | `poll_interval` | Seconds between daemon sync cycles |
-| `[sync]` | `batch_window` | Seconds to batch hook events before syncing |
+| `[sync]` | `batch_window` | Seconds to batch hook events before syncing (reserved — not yet active) |
 | `[sync]` | `socket_path` | Unix socket path for hook-to-daemon communication |
-| `[sync]` | `queue_path` | File path for queued events when daemon is down |
-| `[mapping]` | `default_project` | Fallback TickTick project for unmapped TW tasks |
+| `[sync]` | `queue_path` | File path for queued events when daemon is down (use absolute path; `~` is not expanded) |
+| `[mapping]` | `default_project` | Fallback TickTick project for unmapped TW tasks (reserved — not yet active) |
 | `[[mapping.projects]]` | `ticktick`, `taskwarrior` | One-to-one project mapping pair |
 
 ## Architecture
