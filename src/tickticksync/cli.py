@@ -45,7 +45,10 @@ def _build_engine(cfg: Config) -> SyncEngine:
     tw = TaskWarriorClient()
     tt = _build_api(cfg)
     return SyncEngine(
-        store=state, tw=tw, tt=tt, default_project=cfg.mapping.default_project
+        store=state,
+        tw=tw,
+        tt=tt,
+        project_mappings=cfg.mapping.projects,
     )
 
 
@@ -356,6 +359,10 @@ def init() -> None:
 def sync() -> None:
     """Run one full sync cycle (no daemon required)."""
     cfg = load_config()
+    if not cfg.mapping.projects:
+        raise click.ClickException(
+            "No project mappings configured. Run `tickticksync mapping add` first."
+        )
     engine = _build_engine(cfg)
 
     async def _run() -> None:
@@ -375,6 +382,10 @@ def daemon() -> None:
 def daemon_start() -> None:
     """Start the background sync daemon."""
     cfg = load_config()
+    if not cfg.mapping.projects:
+        raise click.ClickException(
+            "No project mappings configured. Run `tickticksync mapping add` first."
+        )
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     pid = os.fork()

@@ -3,8 +3,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from click.testing import CliRunner
-from tickticksync.cli import cli
-from tickticksync.config import Config, ProjectMapping, SyncConfig, TickTickConfig
+from tickticksync.cli import cli, _build_engine
+from tickticksync.config import Config, MappingConfig, ProjectMapping, SyncConfig, TickTickConfig
 
 
 @pytest.fixture
@@ -664,3 +664,22 @@ def test_init_existing_config_skip_reconfigure(runner, tmp_path):
 
     assert result.exit_code == 0, result.output
     mock_save.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _build_engine
+# ---------------------------------------------------------------------------
+
+def test_build_engine_passes_project_mappings():
+    """_build_engine passes project mappings from config to SyncEngine."""
+    mappings = [ProjectMapping(ticktick="Inbox", taskwarrior="inbox")]
+    cfg = Config(
+        ticktick=TickTickConfig(client_id="id", client_secret="secret"),
+        mapping=MappingConfig(default_project="inbox", projects=mappings),
+    )
+    with patch("tickticksync.cli.StateStore"), \
+         patch("tickticksync.cli.TaskWarriorClient"), \
+         patch("tickticksync.cli._build_api"):
+        engine = _build_engine(cfg)
+    assert engine._tt_to_tw == {"Inbox": "inbox"}
+    assert engine._tw_to_tt == {"inbox": "Inbox"}
