@@ -72,6 +72,10 @@ class SyncEngine:
             if tw_task is not None and self._tt_to_tw:
                 tw_project = tw_task.get("project", "")
                 if tw_project not in self._tw_to_tt:
+                    logger.debug(
+                        "Skipping change detection for mapping %s — TW task moved to unmapped project %r",
+                        mapping.tw_uuid, tw_project,
+                    )
                     continue
 
             tw_changed = tw_task and tw_task.get("modified") != mapping.tw_modified
