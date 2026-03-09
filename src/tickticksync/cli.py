@@ -253,7 +253,7 @@ def init() -> None:
         # Load existing config to seed prompts
         try:
             existing = load_config(config_path)
-        except (ValueError, KeyError) as exc:
+        except (ValueError, KeyError, TypeError, OSError) as exc:
             click.echo(f"Warning: could not parse existing config ({exc}); starting fresh.")
             existing = None
 

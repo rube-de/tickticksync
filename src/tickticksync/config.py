@@ -138,7 +138,7 @@ def save_config_full(
     socket_path: str,
     projects: list[ProjectMapping],
     auth_username: str | None = None,
-    default_project: str = MappingConfig.default_project,
+    default_project: str = "inbox",
 ) -> None:
     """Write a complete config file with all sections."""
     doc = tomlkit.document()
