@@ -313,10 +313,8 @@ def test_save_config_full_no_projects(tmp_path: Path):
     assert doc["mapping"]["default_project"] == "inbox"
 
 
-def test_save_config_full_preserves_default_project(tmp_path):
+def test_save_config_full_preserves_default_project(tmp_path: Path):
     """save_config_full respects an explicit default_project parameter."""
-    from tickticksync.config import save_config_full, load_config
-
     cfg_path = tmp_path / "config.toml"
     save_config_full(
         cfg_path,
