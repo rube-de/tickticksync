@@ -178,3 +178,16 @@ def save_config_full(
     tmp_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
     tmp_path.chmod(0o600)
     tmp_path.replace(path)
+
+
+def update_config_value(path: Path, section: str, key: str, value: object) -> None:
+    """Update a single key in a config section, preserving all other content."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        text = ""
+    doc = tomlkit.parse(text)
+    if section not in doc:
+        doc.add(section, tomlkit.table())
+    doc[section][key] = value
+    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
