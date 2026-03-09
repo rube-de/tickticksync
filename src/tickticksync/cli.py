@@ -18,6 +18,7 @@ from .config import (
     DEFAULT_CONFIG_PATH,
     AuthConfig,
     Config,
+    MappingConfig,
     ProjectMapping,
     SyncConfig,
     TickTickConfig,
@@ -239,6 +240,7 @@ def _register_uda_and_hooks() -> None:
 def init() -> None:
     """Interactive setup wizard for TickTickSync."""
     config_path = DEFAULT_CONFIG_PATH
+    existing: Config | None = None
 
     # --- Check existing config ---
     if config_path.exists():
@@ -248,11 +250,20 @@ def init() -> None:
             _register_uda_and_hooks()
             click.echo("\nRun `tickticksync daemon start` to begin syncing.")
             return
+        # Load existing config to seed prompts
+        existing = load_config(config_path)
 
     # --- Step 1/4: Credentials ---
     click.echo("\n── Step 1/4: TickTick API credentials ──")
-    client_id = click.prompt("Client ID")
-    client_secret = click.prompt("Client secret", hide_input=True)
+    client_id = click.prompt(
+        "Client ID",
+        default=existing.ticktick.client_id if existing else None,
+    )
+    client_secret = click.prompt(
+        "Client secret",
+        hide_input=True,
+        default=existing.ticktick.client_secret if existing else None,
+    )
 
     tt_cfg = TickTickConfig(client_id=client_id, client_secret=client_secret)
     auth_method = "oauth"
@@ -274,12 +285,25 @@ def init() -> None:
 
     # --- Step 3/4: Sync settings ---
     click.echo("\n── Step 3/4: Sync settings ──")
-    poll_interval = click.prompt("Poll interval (seconds)", default=SyncConfig.poll_interval, type=int)
-    socket_path = click.prompt("Socket path", default=SyncConfig.socket_path)
+    poll_interval = click.prompt(
+        "Poll interval (seconds)",
+        default=existing.sync.poll_interval if existing else SyncConfig.poll_interval,
+        type=int,
+    )
+    socket_path = click.prompt(
+        "Socket path",
+        default=existing.sync.socket_path if existing else SyncConfig.socket_path,
+    )
 
     # --- Step 4/4: Project mappings ---
     click.echo("\n── Step 4/4: Project mappings ──")
-    projects: list[ProjectMapping] = []
+
+    # Seed from existing mappings
+    projects: list[ProjectMapping] = list(existing.mapping.projects) if existing else []
+    if projects:
+        click.echo("Current mappings:")
+        for pm in projects:
+            click.echo(f"  {pm.ticktick} → {pm.taskwarrior}")
 
     # Try to fetch projects from TickTick
     tt_projects: list[dict] | None = None
@@ -294,8 +318,8 @@ def init() -> None:
         click.echo("You can add mappings later with: tickticksync mapping add")
 
     if tt_projects is not None:
-        mapped_names: set[str] = set()
-        mapped_tw_names: set[str] = set()
+        mapped_names: set[str] = {p.ticktick for p in projects}
+        mapped_tw_names: set[str] = {p.taskwarrior for p in projects}
 
         while True:
             # Show available (unmapped) projects
@@ -338,6 +362,7 @@ def init() -> None:
             mapped_tw_names.add(tw_name)
 
     # --- Save config ---
+    default_project = existing.mapping.default_project if existing else MappingConfig.default_project
     save_config_full(
         config_path,
         client_id=client_id,
@@ -346,6 +371,7 @@ def init() -> None:
         poll_interval=poll_interval,
         socket_path=socket_path,
         projects=projects,
+        default_project=default_project,
     )
     click.echo(f"\n✓ Config saved to {config_path}")
 
