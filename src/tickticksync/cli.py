@@ -26,6 +26,7 @@ from .config import (
     save_config_auth,
     save_config_full,
     save_config_mapping,
+    update_config_value,
 )
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
@@ -602,3 +603,42 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
     except OSError as err:
         raise click.ClickException(f"Failed to save config: {err}") from err
     click.echo(f'\n\u2713 Mapped "{selected["name"]}" \u2192 "{tw_name}"')
+
+
+# ---------------------------------------------------------------------------
+# config group
+# ---------------------------------------------------------------------------
+
+@cli.group("config")
+def config_group() -> None:
+    """View or modify configuration settings."""
+
+
+@config_group.command("show")
+def config_show() -> None:
+    """Pretty-print the current configuration."""
+    cfg = load_config()
+
+    click.echo("\n[ticktick]")
+    click.echo(f"  client_id      = {cfg.ticktick.client_id}")
+    click.echo(f"  client_secret  = ****")
+
+    click.echo("\n[auth]")
+    click.echo(f"  method         = {cfg.auth.method}")
+    if cfg.auth.username:
+        click.echo(f"  username       = {cfg.auth.username}")
+
+    click.echo("\n[sync]")
+    click.echo(f"  poll_interval  = {cfg.sync.poll_interval}")
+    click.echo(f"  batch_window   = {cfg.sync.batch_window}")
+    click.echo(f"  socket_path    = {cfg.sync.socket_path}")
+    click.echo(f"  queue_path     = {cfg.sync.queue_path}")
+
+    click.echo("\n[mapping]")
+    click.echo(f"  default_project = {cfg.mapping.default_project}")
+    if cfg.mapping.projects:
+        click.echo()
+        for pm in cfg.mapping.projects:
+            click.echo(f"  {pm.ticktick} -> {pm.taskwarrior}")
+    else:
+        click.echo("  (no project mappings)")

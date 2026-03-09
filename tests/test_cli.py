@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from click.testing import CliRunner
 from tickticksync.cli import cli, _build_engine
-from tickticksync.config import Config, MappingConfig, ProjectMapping, SyncConfig, TickTickConfig
+from tickticksync.config import AuthConfig, Config, MappingConfig, ProjectMapping, SyncConfig, TickTickConfig
 
 
 @pytest.fixture
@@ -773,3 +773,45 @@ def test_build_engine_passes_project_mappings():
         engine = _build_engine(cfg)
     assert engine._tt_to_tw == {"Inbox": "inbox"}
     assert engine._tw_to_tt == {"inbox": "Inbox"}
+
+
+# ---------------------------------------------------------------------------
+# config show / set
+# ---------------------------------------------------------------------------
+
+def test_config_show_displays_all_sections(runner, tmp_path):
+    """config show pretty-prints all config sections."""
+    _, cfg = _make_cfg(tmp_path)
+    cfg.sync = SyncConfig(poll_interval=90, socket_path="/tmp/custom.sock")
+    cfg.auth = AuthConfig(method="password", username="u@e.com")
+    cfg.mapping = MappingConfig(
+        default_project="work",
+        projects=[ProjectMapping(ticktick="Inbox", taskwarrior="inbox")],
+    )
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["config", "show"])
+    assert result.exit_code == 0
+    assert "poll_interval" in result.output
+    assert "90" in result.output
+    assert "/tmp/custom.sock" in result.output
+    assert "password" in result.output
+    assert "u@e.com" in result.output
+    assert "work" in result.output
+    assert "Inbox" in result.output
+
+
+def test_config_show_masks_client_secret(runner, tmp_path):
+    """config show masks the client_secret."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["config", "show"])
+    assert result.exit_code == 0
+    assert "csec" not in result.output
+    assert "****" in result.output
+
+
+def test_config_show_no_config(runner):
+    """config show with no config file shows an error."""
+    with patch("tickticksync.cli.load_config", side_effect=FileNotFoundError):
+        result = runner.invoke(cli, ["config", "show"])
+    assert result.exit_code != 0
