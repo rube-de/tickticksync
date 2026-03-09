@@ -251,7 +251,11 @@ def init() -> None:
             click.echo("\nRun `tickticksync daemon start` to begin syncing.")
             return
         # Load existing config to seed prompts
-        existing = load_config(config_path)
+        try:
+            existing = load_config(config_path)
+        except (ValueError, KeyError) as exc:
+            click.echo(f"Warning: could not parse existing config ({exc}); starting fresh.")
+            existing = None
 
     # --- Step 1/4: Credentials ---
     click.echo("\n── Step 1/4: TickTick API credentials ──")
@@ -259,11 +263,17 @@ def init() -> None:
         "Client ID",
         default=existing.ticktick.client_id if existing else None,
     )
-    client_secret = click.prompt(
-        "Client secret",
-        hide_input=True,
-        default=existing.ticktick.client_secret if existing else None,
-    )
+    if existing:
+        client_secret = click.prompt(
+            "Client secret (Enter to keep existing)",
+            hide_input=True,
+            default="",
+            show_default=False,
+        )
+        if not client_secret:
+            client_secret = existing.ticktick.client_secret
+    else:
+        client_secret = click.prompt("Client secret", hide_input=True)
 
     tt_cfg = TickTickConfig(client_id=client_id, client_secret=client_secret)
     auth_method = "oauth"
