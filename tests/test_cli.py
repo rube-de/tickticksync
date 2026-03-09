@@ -815,3 +815,62 @@ def test_config_show_no_config(runner):
     with patch("tickticksync.cli.load_config", side_effect=FileNotFoundError):
         result = runner.invoke(cli, ["config", "show"])
     assert result.exit_code != 0
+
+
+def test_config_set_sync_poll_interval(runner, tmp_path):
+    """config set sync.poll_interval updates the value."""
+    config_path, cfg = _make_cfg(tmp_path)
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.update_config_value") as mock_update,
+    ):
+        result = runner.invoke(cli, ["config", "set", "sync.poll_interval", "120"])
+    assert result.exit_code == 0
+    mock_update.assert_called_once_with(config_path, "sync", "poll_interval", 120)
+
+
+def test_config_set_mapping_default_project(runner, tmp_path):
+    """config set mapping.default_project updates the value."""
+    config_path, cfg = _make_cfg(tmp_path)
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.update_config_value") as mock_update,
+    ):
+        result = runner.invoke(cli, ["config", "set", "mapping.default_project", "work"])
+    assert result.exit_code == 0
+    mock_update.assert_called_once_with(config_path, "mapping", "default_project", "work")
+
+
+def test_config_set_invalid_key(runner, tmp_path):
+    """config set with an invalid key shows an error listing valid keys."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["config", "set", "ticktick.client_id", "new"])
+    assert result.exit_code != 0
+    assert "sync.poll_interval" in result.output
+
+
+def test_config_set_bad_dotted_key(runner, tmp_path):
+    """config set with a key missing the dot separator shows an error."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["config", "set", "poll_interval", "120"])
+    assert result.exit_code != 0
+
+
+def test_config_set_int_key_rejects_non_numeric(runner, tmp_path):
+    """config set for an int key with a non-numeric value shows an error."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["config", "set", "sync.poll_interval", "abc"])
+    assert result.exit_code != 0
+
+
+def test_config_set_int_key_rejects_zero(runner, tmp_path):
+    """config set for an int key with zero shows an error."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["config", "set", "sync.poll_interval", "0"])
+    assert result.exit_code != 0

@@ -614,6 +614,15 @@ def config_group() -> None:
     """View or modify configuration settings."""
 
 
+_SETTABLE_KEYS: dict[str, type] = {
+    "sync.poll_interval": int,
+    "sync.batch_window": int,
+    "sync.socket_path": str,
+    "sync.queue_path": str,
+    "mapping.default_project": str,
+}
+
+
 @config_group.command("show")
 def config_show() -> None:
     """Pretty-print the current configuration."""
@@ -642,3 +651,36 @@ def config_show() -> None:
             click.echo(f"  {pm.ticktick} -> {pm.taskwarrior}")
     else:
         click.echo("  (no project mappings)")
+
+
+@config_group.command("set")
+@click.argument("key")
+@click.argument("value")
+def config_set(key: str, value: str) -> None:
+    """Update a configuration setting (e.g. sync.poll_interval 120)."""
+    load_config()  # validate config exists and is parseable
+
+    if key not in _SETTABLE_KEYS:
+        valid = ", ".join(sorted(_SETTABLE_KEYS))
+        raise click.ClickException(f"Unknown key {key!r}. Valid keys: {valid}")
+
+    parts = key.split(".", 1)
+    if len(parts) != 2:
+        raise click.ClickException("Key must be section.name (e.g. sync.poll_interval)")
+    section, name = parts
+
+    expected_type = _SETTABLE_KEYS[key]
+    if expected_type is int:
+        try:
+            coerced: object = int(value)
+        except ValueError:
+            raise click.ClickException(f"{key!r} must be an integer, got {value!r}")
+        if coerced <= 0:
+            raise click.ClickException(f"{key!r} must be > 0, got {coerced}")
+    else:
+        if not value:
+            raise click.ClickException(f"{key!r} must not be empty")
+        coerced = value
+
+    update_config_value(DEFAULT_CONFIG_PATH, section, name, coerced)
+    click.echo(f"{key} = {coerced}")
