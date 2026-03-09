@@ -630,8 +630,13 @@ def test_init_existing_config_asks_reconfigure(runner, tmp_path):
     config_path = tmp_path / "config.toml"
     config_path.write_text('[ticktick]\nclient_id = "old_cid"\nclient_secret = "old_csec"\n')
 
+    existing_cfg = Config(
+        ticktick=TickTickConfig(client_id="old_cid", client_secret="old_csec"),
+    )
+
     with (
         patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.load_config", return_value=existing_cfg),
         patch("tickticksync.cli.save_config_full") as mock_save,
         patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("skip")),
         patch("tickticksync.cli._build_api", return_value=MagicMock()),
@@ -646,6 +651,91 @@ def test_init_existing_config_asks_reconfigure(runner, tmp_path):
     assert "already exists" in result.output.lower()
     save_kwargs = mock_save.call_args[1]
     assert save_kwargs["client_id"] == "new_cid"
+
+
+def test_init_reconfigure_seeds_from_existing(runner, tmp_path):
+    """Re-running init with reconfigure pre-populates prompts from existing config."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[ticktick]\nclient_id = "old_cid"\nclient_secret = "old_csec"\n'
+        '[sync]\npoll_interval = 90\nsocket_path = "/tmp/old.sock"\n'
+        '[mapping]\ndefault_project = "work"\n'
+        '[[mapping.projects]]\nticktick = "Inbox"\ntaskwarrior = "inbox"\n'
+    )
+
+    existing_cfg = Config(
+        ticktick=TickTickConfig(client_id="old_cid", client_secret="old_csec"),
+        sync=SyncConfig(poll_interval=90, socket_path="/tmp/old.sock"),
+        mapping=MappingConfig(
+            default_project="work",
+            projects=[ProjectMapping(ticktick="Inbox", taskwarrior="inbox")],
+        ),
+    )
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.load_config", return_value=existing_cfg),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("skip")),
+        patch("tickticksync.cli._build_api", return_value=MagicMock()),
+        patch("tickticksync.cli._fetch_ticktick_projects", side_effect=Exception("no auth")),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        # User says yes to reconfigure, then accepts all defaults (presses Enter for each prompt)
+        result = runner.invoke(cli, ["init"], input="y\n\n\ny\n\n\ny\n")
+
+    assert result.exit_code == 0, result.output
+    save_kwargs = mock_save.call_args[1]
+    # Existing values preserved when user accepts defaults
+    assert save_kwargs["client_id"] == "old_cid"
+    assert save_kwargs["client_secret"] == "old_csec"
+    assert save_kwargs["poll_interval"] == 90
+    assert save_kwargs["socket_path"] == "/tmp/old.sock"
+    assert save_kwargs["default_project"] == "work"
+
+
+def test_init_reconfigure_preserves_existing_mappings(runner, tmp_path):
+    """Re-running init pre-populates existing mappings."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[ticktick]\nclient_id = "cid"\nclient_secret = "csec"\n'
+        '[[mapping.projects]]\nticktick = "Inbox"\ntaskwarrior = "inbox"\n'
+    )
+
+    existing_cfg = Config(
+        ticktick=TickTickConfig(client_id="cid", client_secret="csec"),
+        mapping=MappingConfig(
+            projects=[ProjectMapping(ticktick="Inbox", taskwarrior="inbox")],
+        ),
+    )
+
+    mock_api = MagicMock()
+
+    with (
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.load_config", return_value=existing_cfg),
+        patch("tickticksync.cli.save_config_full") as mock_save,
+        patch("tickticksync.cli._run_oauth_flow", side_effect=click.ClickException("skip")),
+        patch("tickticksync.cli._build_api", return_value=mock_api),
+        patch("tickticksync.cli._fetch_ticktick_projects", return_value=[
+            {"id": "1", "name": "Inbox"},
+            {"id": "2", "name": "Work"},
+        ]),
+        patch("tickticksync.cli.TaskWarriorClient") as mock_tw_cls,
+        patch("tickticksync.cli.HOOKS_DIR", tmp_path / "hooks"),
+    ):
+        mock_tw_cls.return_value = MagicMock()
+        # Reconfigure: y, creds: Enter+Enter (accept defaults), oauth skip: y,
+        # sync: Enter+Enter (accept defaults), mapping: don't add more: n
+        result = runner.invoke(cli, ["init"], input="y\n\n\ny\n\n\nn\n")
+
+    assert result.exit_code == 0, result.output
+    save_kwargs = mock_save.call_args[1]
+    projects = save_kwargs["projects"]
+    # Existing mapping preserved even though user didn't re-add it
+    assert any(p.ticktick == "Inbox" and p.taskwarrior == "inbox" for p in projects)
 
 
 def test_init_existing_config_skip_reconfigure(runner, tmp_path):

@@ -311,3 +311,20 @@ def test_save_config_full_no_projects(tmp_path: Path):
     assert "sync" in doc
     assert "mapping" in doc
     assert doc["mapping"]["default_project"] == "inbox"
+
+
+def test_save_config_full_preserves_default_project(tmp_path: Path):
+    """save_config_full respects an explicit default_project parameter."""
+    cfg_path = tmp_path / "config.toml"
+    save_config_full(
+        cfg_path,
+        client_id="cid",
+        client_secret="csec",
+        auth_method="oauth",
+        poll_interval=60,
+        socket_path="/tmp/tickticksync.sock",
+        projects=[],
+        default_project="work",
+    )
+    loaded = load_config(cfg_path)
+    assert loaded.mapping.default_project == "work"
