@@ -658,7 +658,7 @@ def config_show() -> None:
                 click.echo(f"  {f.name} = ****")
             elif f.name == "projects":
                 if val:
-                    click.echo()
+                    click.echo(f"  {f.name} =")
                     for pm in val:
                         click.echo(f"  {pm.ticktick} -> {pm.taskwarrior}")
                 else:
@@ -689,7 +689,7 @@ def config_set(key: str, value: str) -> None:
         if coerced <= 0:
             raise click.ClickException(f"{key!r} must be > 0, got {coerced}")
     else:
-        if not value:
+        if not value.strip():
             raise click.ClickException(f"{key!r} must not be empty")
         coerced = value
 

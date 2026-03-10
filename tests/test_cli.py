@@ -874,3 +874,11 @@ def test_config_set_int_key_rejects_zero(runner, tmp_path):
     with patch("tickticksync.cli.load_config", return_value=cfg):
         result = runner.invoke(cli, ["config", "set", "sync.poll_interval", "0"])
     assert result.exit_code != 0
+
+
+def test_config_set_int_key_rejects_negative(runner, tmp_path):
+    """config set for an int key with a negative value shows an error."""
+    _, cfg = _make_cfg(tmp_path)
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["config", "set", "sync.poll_interval", "-5"])
+    assert result.exit_code != 0

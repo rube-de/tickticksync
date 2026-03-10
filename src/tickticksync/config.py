@@ -186,10 +186,7 @@ def save_config_full(
 
 def update_config_value(path: Path, section: str, key: str, value: object) -> None:
     """Update a single key in a config section, preserving all other content."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        text = ""
+    text = path.read_text(encoding="utf-8")
     doc = tomlkit.parse(text)
     if section not in doc:
         doc.add(section, tomlkit.table())
