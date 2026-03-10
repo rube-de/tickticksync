@@ -627,15 +627,22 @@ _SETTABLE_KEYS: dict[str, type] = {
 assert all("." in k for k in _SETTABLE_KEYS), "All settable keys must be 'section.name'"
 
 
-@config_group.command("show")
-def config_show() -> None:
-    """Pretty-print the current configuration."""
+def _load_config_or_click() -> Config:
+    """Load config, converting any failure into a clean ClickException."""
     try:
-        cfg = load_config()
+        return load_config()
     except FileNotFoundError:
         raise click.ClickException(
             "Config file not found. Run `tickticksync init` first."
-        )
+        ) from None
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        raise click.ClickException(f"Failed to read config: {err}") from err
+
+
+@config_group.command("show")
+def config_show() -> None:
+    """Pretty-print the current configuration."""
+    cfg = _load_config_or_click()
 
     sections = [
         ("ticktick", cfg.ticktick),
@@ -665,12 +672,7 @@ def config_show() -> None:
 @click.argument("value")
 def config_set(key: str, value: str) -> None:
     """Update a configuration setting (e.g. sync.poll_interval 120)."""
-    try:
-        load_config()  # validate config exists and is parseable
-    except FileNotFoundError:
-        raise click.ClickException(
-            "Config file not found. Run `tickticksync init` first."
-        )
+    _load_config_or_click()  # validate config exists and is parseable
 
     if key not in _SETTABLE_KEYS:
         valid = ", ".join(sorted(_SETTABLE_KEYS))
@@ -691,5 +693,8 @@ def config_set(key: str, value: str) -> None:
             raise click.ClickException(f"{key!r} must not be empty")
         coerced = value
 
-    update_config_value(DEFAULT_CONFIG_PATH, section, name, coerced)
+    try:
+        update_config_value(DEFAULT_CONFIG_PATH, section, name, coerced)
+    except OSError as e:
+        raise click.ClickException(f"Failed to save config: {e}") from e
     click.echo(f"{key} = {coerced}")
