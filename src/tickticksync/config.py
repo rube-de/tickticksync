@@ -21,6 +21,10 @@ class SyncConfig:
     socket_path: str = "/tmp/tickticksync.sock"
     queue_path: str = "~/.local/share/tickticksync/hook_queue.json"
 
+    def __post_init__(self) -> None:
+        self.socket_path = str(Path(self.socket_path).expanduser())
+        self.queue_path = str(Path(self.queue_path).expanduser())
+
 
 @dataclass
 class ProjectMapping:
@@ -190,4 +194,8 @@ def update_config_value(path: Path, section: str, key: str, value: object) -> No
     if section not in doc:
         doc.add(section, tomlkit.table())
     doc[section][key] = value
-    path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    tmp_path.chmod(0o600)
+    tmp_path.replace(path)

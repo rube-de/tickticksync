@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import http.server
 import json
 import os
@@ -614,6 +615,8 @@ def config_group() -> None:
     """View or modify configuration settings."""
 
 
+_MASKED_FIELDS = frozenset({"client_secret"})
+
 _SETTABLE_KEYS: dict[str, type] = {
     "sync.poll_interval": int,
     "sync.batch_window": int,
@@ -621,36 +624,40 @@ _SETTABLE_KEYS: dict[str, type] = {
     "sync.queue_path": str,
     "mapping.default_project": str,
 }
+assert all("." in k for k in _SETTABLE_KEYS), "All settable keys must be 'section.name'"
 
 
 @config_group.command("show")
 def config_show() -> None:
     """Pretty-print the current configuration."""
-    cfg = load_config()
+    try:
+        cfg = load_config()
+    except FileNotFoundError:
+        raise click.ClickException(
+            "Config file not found. Run `tickticksync init` first."
+        )
 
-    click.echo("\n[ticktick]")
-    click.echo(f"  client_id      = {cfg.ticktick.client_id}")
-    click.echo(f"  client_secret  = ****")
-
-    click.echo("\n[auth]")
-    click.echo(f"  method         = {cfg.auth.method}")
-    if cfg.auth.username:
-        click.echo(f"  username       = {cfg.auth.username}")
-
-    click.echo("\n[sync]")
-    click.echo(f"  poll_interval  = {cfg.sync.poll_interval}")
-    click.echo(f"  batch_window   = {cfg.sync.batch_window}")
-    click.echo(f"  socket_path    = {cfg.sync.socket_path}")
-    click.echo(f"  queue_path     = {cfg.sync.queue_path}")
-
-    click.echo("\n[mapping]")
-    click.echo(f"  default_project = {cfg.mapping.default_project}")
-    if cfg.mapping.projects:
-        click.echo()
-        for pm in cfg.mapping.projects:
-            click.echo(f"  {pm.ticktick} -> {pm.taskwarrior}")
-    else:
-        click.echo("  (no project mappings)")
+    sections = [
+        ("ticktick", cfg.ticktick),
+        ("auth", cfg.auth),
+        ("sync", cfg.sync),
+        ("mapping", cfg.mapping),
+    ]
+    for section_name, section_obj in sections:
+        click.echo(f"\n[{section_name}]")
+        for f in dataclasses.fields(section_obj):
+            val = getattr(section_obj, f.name)
+            if f.name in _MASKED_FIELDS:
+                click.echo(f"  {f.name} = ****")
+            elif f.name == "projects":
+                if val:
+                    click.echo()
+                    for pm in val:
+                        click.echo(f"  {pm.ticktick} -> {pm.taskwarrior}")
+                else:
+                    click.echo("  (no project mappings)")
+            elif val is not None:
+                click.echo(f"  {f.name} = {val}")
 
 
 @config_group.command("set")
@@ -658,23 +665,25 @@ def config_show() -> None:
 @click.argument("value")
 def config_set(key: str, value: str) -> None:
     """Update a configuration setting (e.g. sync.poll_interval 120)."""
-    load_config()  # validate config exists and is parseable
+    try:
+        load_config()  # validate config exists and is parseable
+    except FileNotFoundError:
+        raise click.ClickException(
+            "Config file not found. Run `tickticksync init` first."
+        )
 
     if key not in _SETTABLE_KEYS:
         valid = ", ".join(sorted(_SETTABLE_KEYS))
         raise click.ClickException(f"Unknown key {key!r}. Valid keys: {valid}")
 
-    parts = key.split(".", 1)
-    if len(parts) != 2:
-        raise click.ClickException("Key must be section.name (e.g. sync.poll_interval)")
-    section, name = parts
+    section, name = key.split(".", 1)
 
     expected_type = _SETTABLE_KEYS[key]
     if expected_type is int:
         try:
             coerced: object = int(value)
         except ValueError:
-            raise click.ClickException(f"{key!r} must be an integer, got {value!r}")
+            raise click.ClickException(f"{key!r} must be an integer, got {value!r}") from None
         if coerced <= 0:
             raise click.ClickException(f"{key!r} must be > 0, got {coerced}")
     else:
