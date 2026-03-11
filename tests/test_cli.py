@@ -882,3 +882,42 @@ def test_config_set_int_key_rejects_negative(runner, tmp_path):
     with patch("tickticksync.cli.load_config", return_value=cfg):
         result = runner.invoke(cli, ["config", "set", "sync.poll_interval", "-5"])
     assert result.exit_code != 0
+
+
+def test_config_set_socket_path(runner, tmp_path):
+    """config set sync.socket_path stores the literal string."""
+    config_path, cfg = _make_cfg(tmp_path)
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.update_config_value") as mock_update,
+    ):
+        result = runner.invoke(cli, ["config", "set", "sync.socket_path", "/run/custom.sock"])
+    assert result.exit_code == 0
+    mock_update.assert_called_once_with(config_path, "sync", "socket_path", "/run/custom.sock")
+
+
+def test_config_set_queue_path(runner, tmp_path):
+    """config set sync.queue_path stores the literal string."""
+    config_path, cfg = _make_cfg(tmp_path)
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.update_config_value") as mock_update,
+    ):
+        result = runner.invoke(cli, ["config", "set", "sync.queue_path", "/tmp/queue.json"])
+    assert result.exit_code == 0
+    mock_update.assert_called_once_with(config_path, "sync", "queue_path", "/tmp/queue.json")
+
+
+def test_config_set_batch_window(runner, tmp_path):
+    """config set sync.batch_window validates and stores the integer."""
+    config_path, cfg = _make_cfg(tmp_path)
+    with (
+        patch("tickticksync.cli.load_config", return_value=cfg),
+        patch("tickticksync.cli.DEFAULT_CONFIG_PATH", config_path),
+        patch("tickticksync.cli.update_config_value") as mock_update,
+    ):
+        result = runner.invoke(cli, ["config", "set", "sync.batch_window", "10"])
+    assert result.exit_code == 0
+    mock_update.assert_called_once_with(config_path, "sync", "batch_window", 10)
