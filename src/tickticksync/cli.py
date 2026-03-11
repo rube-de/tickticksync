@@ -683,11 +683,12 @@ def config_set(key: str, value: str) -> None:
     expected_type = _SETTABLE_KEYS[key]
     if expected_type is int:
         try:
-            coerced: object = int(value)
+            coerced_int: int = int(value)
         except ValueError:
             raise click.ClickException(f"{key!r} must be an integer, got {value!r}") from None
-        if coerced <= 0:
-            raise click.ClickException(f"{key!r} must be > 0, got {coerced}")
+        if coerced_int <= 0:
+            raise click.ClickException(f"{key!r} must be > 0, got {coerced_int}")
+        coerced: object = coerced_int
     else:
         if not value.strip():
             raise click.ClickException(f"{key!r} must not be empty")
