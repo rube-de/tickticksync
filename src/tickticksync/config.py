@@ -1,3 +1,5 @@
+import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -192,7 +194,17 @@ def update_config_value(path: Path, section: str, key: str, value: object) -> No
         doc.add(section, tomlkit.table())
     doc[section][key] = value
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.tmp")
-    tmp_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
-    tmp_path.chmod(0o600)
-    tmp_path.replace(path)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(tomlkit.dumps(doc))
+        tmp_path.chmod(0o600)
+        tmp_path.replace(path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise

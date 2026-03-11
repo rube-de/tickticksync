@@ -660,9 +660,9 @@ def config_show() -> None:
                 if val:
                     click.echo(f"  {f.name} =")
                     for pm in val:
-                        click.echo(f"  {pm.ticktick} -> {pm.taskwarrior}")
+                        click.echo(f"    {pm.ticktick} -> {pm.taskwarrior}")
                 else:
-                    click.echo("  (no project mappings)")
+                    click.echo(f"  {f.name} = (none)")
             elif val is not None:
                 click.echo(f"  {f.name} = {val}")
 
