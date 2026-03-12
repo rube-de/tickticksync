@@ -45,7 +45,7 @@ def _run_hook(skip_lines: int = 0) -> None:
         sys.stdin.readline()
     task = json.loads(sys.stdin.readline())
     cfg = load_config()
-    send_to_daemon(task, cfg.sync.socket_path, cfg.sync.queue_path)
+    send_to_daemon(task, cfg.sync.resolved_socket_path, cfg.sync.resolved_queue_path)
     print(json.dumps(task))
 
 

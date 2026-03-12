@@ -438,8 +438,8 @@ def daemon_start() -> None:
     d = Daemon(
         sync_engine=engine,
         queue=queue,
-        socket_path=cfg.sync.socket_path,
-        queue_path=cfg.sync.queue_path,
+        socket_path=cfg.sync.resolved_socket_path,
+        queue_path=cfg.sync.resolved_queue_path,
         poll_interval=cfg.sync.poll_interval,
     )
     asyncio.run(d.run())
