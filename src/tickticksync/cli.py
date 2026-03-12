@@ -664,6 +664,8 @@ def config_show() -> None:
                     click.echo(f"  {f.name} = (none)")
             elif val is not None:
                 click.echo(f"  {f.name} = {val}")
+            else:
+                click.echo(f"  {f.name} = (not set)")
 
 
 @config_group.command("set")

@@ -366,3 +366,18 @@ def test_update_config_value_mapping_default_project(tmp_path):
     update_config_value(cfg_path, "mapping", "default_project", "work")
     cfg = load_config(cfg_path)
     assert cfg.mapping.default_project == "work"
+
+
+def test_update_config_value_mapping_default_project_with_projects(tmp_path):
+    """update_config_value preserves [[mapping.projects]] AoT when changing default_project."""
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        '[ticktick]\nclient_id = "id"\nclient_secret = "secret"\n\n'
+        '[mapping]\ndefault_project = "inbox"\n\n'
+        '[[mapping.projects]]\nticktick = "Inbox"\ntaskwarrior = "inbox"\n'
+    )
+    update_config_value(cfg_path, "mapping", "default_project", "work")
+    cfg = load_config(cfg_path)
+    assert cfg.mapping.default_project == "work"
+    assert len(cfg.mapping.projects) == 1
+    assert cfg.mapping.projects[0].ticktick == "Inbox"
