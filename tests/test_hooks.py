@@ -1,6 +1,10 @@
+import io
 import json
 import socket
 from pathlib import Path
+from unittest.mock import patch
+
+from tickticksync.config import Config, TickTickConfig, SyncConfig
 from tickticksync.hooks import send_to_daemon, drain_queue
 
 
@@ -61,10 +65,6 @@ def test_drain_queue_noop_when_no_file(tmp_path):
 
 def test_run_hook_uses_resolved_paths(tmp_path, monkeypatch):
     """_run_hook expands tilde paths before passing to send_to_daemon."""
-    import io
-    from unittest.mock import patch
-    from tickticksync.config import Config, TickTickConfig, SyncConfig
-
     cfg = Config(
         ticktick=TickTickConfig(client_id="id", client_secret="sec"),
         sync=SyncConfig(
