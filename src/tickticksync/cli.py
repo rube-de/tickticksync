@@ -624,7 +624,8 @@ _SETTABLE_KEYS: dict[str, type] = {
     "sync.queue_path": str,
     "mapping.default_project": str,
 }
-assert all("." in k for k in _SETTABLE_KEYS), "All settable keys must be 'section.name'"
+if not all("." in k for k in _SETTABLE_KEYS):
+    raise RuntimeError("All settable keys must be 'section.name'")
 
 
 def _load_config_or_click() -> Config:
