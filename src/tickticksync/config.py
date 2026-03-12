@@ -23,9 +23,13 @@ class SyncConfig:
     socket_path: str = "/tmp/tickticksync.sock"
     queue_path: str = "~/.local/share/tickticksync/hook_queue.json"
 
-    def __post_init__(self) -> None:
-        self.socket_path = str(Path(self.socket_path).expanduser())
-        self.queue_path = str(Path(self.queue_path).expanduser())
+    @property
+    def resolved_socket_path(self) -> str:
+        return str(Path(self.socket_path).expanduser())
+
+    @property
+    def resolved_queue_path(self) -> str:
+        return str(Path(self.queue_path).expanduser())
 
 
 @dataclass

@@ -381,3 +381,21 @@ def test_update_config_value_mapping_default_project_with_projects(tmp_path):
     assert cfg.mapping.default_project == "work"
     assert len(cfg.mapping.projects) == 1
     assert cfg.mapping.projects[0].ticktick == "Inbox"
+
+
+def test_sync_config_preserves_tilde_in_queue_path():
+    """SyncConfig stores the raw tilde string without eager expansion."""
+    sc = SyncConfig(queue_path="~/.local/share/tickticksync/hook_queue.json")
+    assert sc.queue_path == "~/.local/share/tickticksync/hook_queue.json"
+
+
+def test_sync_config_resolved_paths_expand_tilde():
+    """resolved_socket_path / resolved_queue_path expand ~ to absolute paths."""
+    sc = SyncConfig(
+        socket_path="~/sockets/test.sock",
+        queue_path="~/.local/share/tickticksync/hook_queue.json",
+    )
+    assert "~" not in sc.resolved_socket_path
+    assert sc.resolved_socket_path.endswith("/sockets/test.sock")
+    assert "~" not in sc.resolved_queue_path
+    assert sc.resolved_queue_path.endswith("/.local/share/tickticksync/hook_queue.json")

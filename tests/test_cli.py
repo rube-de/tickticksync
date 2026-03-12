@@ -779,6 +779,16 @@ def test_build_engine_passes_project_mappings():
 # config show / set
 # ---------------------------------------------------------------------------
 
+def test_config_show_displays_tilde_form_paths(runner, tmp_path):
+    """config show displays tilde-form paths, not expanded absolute paths."""
+    _, cfg = _make_cfg(tmp_path)
+    cfg.sync = SyncConfig(queue_path="~/.local/share/tickticksync/hook_queue.json")
+    with patch("tickticksync.cli.load_config", return_value=cfg):
+        result = runner.invoke(cli, ["config", "show"])
+    assert result.exit_code == 0
+    assert "~/.local/share/tickticksync/hook_queue.json" in result.output
+
+
 def test_config_show_displays_all_sections(runner, tmp_path):
     """config show pretty-prints all config sections."""
     _, cfg = _make_cfg(tmp_path)

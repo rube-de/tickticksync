@@ -1,6 +1,10 @@
+import io
 import json
 import socket
 from pathlib import Path
+from unittest.mock import patch
+
+from tickticksync.config import Config, TickTickConfig, SyncConfig
 from tickticksync.hooks import send_to_daemon, drain_queue
 
 
@@ -57,3 +61,29 @@ def test_drain_queue_sends_all_items_and_clears_file(tmp_path):
 def test_drain_queue_noop_when_no_file(tmp_path):
     queue_path = tmp_path / "queue.json"
     drain_queue(SOCKET_PATH, str(queue_path))  # must not raise
+
+
+def test_run_hook_uses_resolved_paths(tmp_path, monkeypatch):
+    """_run_hook expands tilde paths before passing to send_to_daemon."""
+    cfg = Config(
+        ticktick=TickTickConfig(client_id="id", client_secret="sec"),
+        sync=SyncConfig(
+            socket_path="~/sockets/test.sock",
+            queue_path="~/.local/share/tickticksync/queue.json",
+        ),
+    )
+
+    task_json = '{"uuid": "u1", "description": "Test"}\n'
+    monkeypatch.setattr("sys.stdin", io.StringIO(task_json))
+
+    with (
+        patch("tickticksync.config.load_config", return_value=cfg),
+        patch("tickticksync.hooks.send_to_daemon") as mock_send,
+    ):
+        from tickticksync.hooks import _run_hook
+        with patch("builtins.print"):
+            _run_hook(skip_lines=0)
+
+    call_args = mock_send.call_args[0]
+    assert "~" not in call_args[1], f"socket_path not expanded: {call_args[1]}"
+    assert "~" not in call_args[2], f"queue_path not expanded: {call_args[2]}"
