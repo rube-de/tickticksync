@@ -646,10 +646,8 @@ def config_show() -> None:
     cfg = _load_config_or_click()
 
     sections = [
-        ("ticktick", cfg.ticktick),
-        ("auth", cfg.auth),
-        ("sync", cfg.sync),
-        ("mapping", cfg.mapping),
+        (f.name, getattr(cfg, f.name))
+        for f in dataclasses.fields(cfg)
     ]
     for section_name, section_obj in sections:
         click.echo(f"\n[{section_name}]")
