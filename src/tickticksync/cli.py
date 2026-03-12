@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import http.server
 import json
 import os
@@ -26,6 +27,7 @@ from .config import (
     save_config_auth,
     save_config_full,
     save_config_mapping,
+    update_config_value,
 )
 from .state import StateStore
 from .taskwarrior import TaskWarriorClient
@@ -602,3 +604,99 @@ def mapping_add(ticktick: str | None, taskwarrior: str | None) -> None:
     except OSError as err:
         raise click.ClickException(f"Failed to save config: {err}") from err
     click.echo(f'\n\u2713 Mapped "{selected["name"]}" \u2192 "{tw_name}"')
+
+
+# ---------------------------------------------------------------------------
+# config group
+# ---------------------------------------------------------------------------
+
+@cli.group("config")
+def config_group() -> None:
+    """View or modify configuration settings."""
+
+
+_MASKED_FIELDS = frozenset({"client_secret"})
+
+_SETTABLE_KEYS: dict[str, type] = {
+    "sync.poll_interval": int,
+    "sync.batch_window": int,
+    "sync.socket_path": str,
+    "sync.queue_path": str,
+    "mapping.default_project": str,
+}
+if not all("." in k for k in _SETTABLE_KEYS):
+    raise RuntimeError("All settable keys must be 'section.name'")
+
+
+def _load_config_or_click() -> Config:
+    """Load config, converting any failure into a clean ClickException."""
+    try:
+        return load_config()
+    except FileNotFoundError:
+        raise click.ClickException(
+            "Config file not found. Run `tickticksync init` first."
+        ) from None
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        raise click.ClickException(f"Failed to read config: {err}") from err
+
+
+@config_group.command("show")
+def config_show() -> None:
+    """Pretty-print the current configuration."""
+    cfg = _load_config_or_click()
+
+    sections = [
+        (f.name, getattr(cfg, f.name))
+        for f in dataclasses.fields(cfg)
+    ]
+    for section_name, section_obj in sections:
+        click.echo(f"\n[{section_name}]")
+        for f in dataclasses.fields(section_obj):
+            val = getattr(section_obj, f.name)
+            if f.name in _MASKED_FIELDS:
+                click.echo(f"  {f.name} = ****")
+            elif f.name == "projects":
+                if val:
+                    click.echo(f"  {f.name} =")
+                    for pm in val:
+                        click.echo(f"    {pm.ticktick} -> {pm.taskwarrior}")
+                else:
+                    click.echo(f"  {f.name} = (none)")
+            elif val is not None:
+                click.echo(f"  {f.name} = {val}")
+            else:
+                click.echo(f"  {f.name} = (not set)")
+
+
+@config_group.command("set")
+@click.argument("key")
+@click.argument("value")
+def config_set(key: str, value: str) -> None:
+    """Update a configuration setting (e.g. sync.poll_interval 120)."""
+    _load_config_or_click()  # validate config exists and is parseable
+
+    if key not in _SETTABLE_KEYS:
+        valid = ", ".join(sorted(_SETTABLE_KEYS))
+        raise click.ClickException(f"Unknown key {key!r}. Valid keys: {valid}")
+
+    section, name = key.split(".", 1)
+
+    expected_type = _SETTABLE_KEYS[key]
+    if expected_type is int:
+        try:
+            coerced_int: int = int(value)
+        except ValueError:
+            raise click.ClickException(f"{key!r} must be an integer, got {value!r}") from None
+        if coerced_int <= 0:
+            raise click.ClickException(f"{key!r} must be > 0, got {coerced_int}")
+        coerced: object = coerced_int
+    else:
+        if not value.strip():
+            raise click.ClickException(f"{key!r} must not be empty")
+        coerced = value.strip()
+
+    try:
+        update_config_value(DEFAULT_CONFIG_PATH, section, name, coerced)
+    except OSError as e:
+        raise click.ClickException(f"Failed to save config: {e}") from e
+    click.echo(f"{key} = {coerced}")

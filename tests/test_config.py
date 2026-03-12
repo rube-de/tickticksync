@@ -2,7 +2,7 @@
 import pytest
 import tomlkit
 from pathlib import Path
-from tickticksync.config import load_config, save_config_auth, save_config_mapping, save_config_full, MappingConfig, ProjectMapping, SyncConfig
+from tickticksync.config import load_config, save_config_auth, save_config_mapping, save_config_full, update_config_value, MappingConfig, ProjectMapping, SyncConfig
 
 
 def test_load_minimal_config(tmp_config):
@@ -328,3 +328,56 @@ def test_save_config_full_preserves_default_project(tmp_path: Path):
     )
     loaded = load_config(cfg_path)
     assert loaded.mapping.default_project == "work"
+
+
+def test_update_config_value_sync_key(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text('[ticktick]\nclient_id = "id"\nclient_secret = "secret"\n\n[sync]\npoll_interval = 60\n')
+    update_config_value(cfg_path, "sync", "poll_interval", 120)
+    cfg = load_config(cfg_path)
+    assert cfg.sync.poll_interval == 120
+
+
+def test_update_config_value_preserves_other_sections(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        '[ticktick]\nclient_id = "id"\nclient_secret = "secret"\n\n'
+        '[sync]\npoll_interval = 60\n\n'
+        '[auth]\nmethod = "password"\nusername = "u@e.com"\n'
+    )
+    update_config_value(cfg_path, "sync", "poll_interval", 120)
+    cfg = load_config(cfg_path)
+    assert cfg.auth.method == "password"
+    assert cfg.auth.username == "u@e.com"
+    assert cfg.ticktick.client_id == "id"
+
+
+def test_update_config_value_creates_section_if_missing(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text('[ticktick]\nclient_id = "id"\nclient_secret = "secret"\n')
+    update_config_value(cfg_path, "sync", "poll_interval", 90)
+    cfg = load_config(cfg_path)
+    assert cfg.sync.poll_interval == 90
+
+
+def test_update_config_value_mapping_default_project(tmp_path):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text('[ticktick]\nclient_id = "id"\nclient_secret = "secret"\n\n[mapping]\ndefault_project = "inbox"\n')
+    update_config_value(cfg_path, "mapping", "default_project", "work")
+    cfg = load_config(cfg_path)
+    assert cfg.mapping.default_project == "work"
+
+
+def test_update_config_value_mapping_default_project_with_projects(tmp_path):
+    """update_config_value preserves [[mapping.projects]] AoT when changing default_project."""
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        '[ticktick]\nclient_id = "id"\nclient_secret = "secret"\n\n'
+        '[mapping]\ndefault_project = "inbox"\n\n'
+        '[[mapping.projects]]\nticktick = "Inbox"\ntaskwarrior = "inbox"\n'
+    )
+    update_config_value(cfg_path, "mapping", "default_project", "work")
+    cfg = load_config(cfg_path)
+    assert cfg.mapping.default_project == "work"
+    assert len(cfg.mapping.projects) == 1
+    assert cfg.mapping.projects[0].ticktick == "Inbox"

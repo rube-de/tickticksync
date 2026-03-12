@@ -1,3 +1,5 @@
+import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -20,6 +22,10 @@ class SyncConfig:
     batch_window: int = 5
     socket_path: str = "/tmp/tickticksync.sock"
     queue_path: str = "~/.local/share/tickticksync/hook_queue.json"
+
+    def __post_init__(self) -> None:
+        self.socket_path = str(Path(self.socket_path).expanduser())
+        self.queue_path = str(Path(self.queue_path).expanduser())
 
 
 @dataclass
@@ -178,3 +184,27 @@ def save_config_full(
     tmp_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
     tmp_path.chmod(0o600)
     tmp_path.replace(path)
+
+
+def update_config_value(path: Path, section: str, key: str, value: object) -> None:
+    """Update a single key in a config section, preserving all other content."""
+    text = path.read_text(encoding="utf-8")
+    doc = tomlkit.parse(text)
+    if section not in doc:
+        doc.add(section, tomlkit.table())
+    doc[section][key] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(tomlkit.dumps(doc))
+        tmp_path.chmod(0o600)
+        tmp_path.replace(path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
