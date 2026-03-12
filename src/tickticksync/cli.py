@@ -693,7 +693,7 @@ def config_set(key: str, value: str) -> None:
     else:
         if not value.strip():
             raise click.ClickException(f"{key!r} must not be empty")
-        coerced = value
+        coerced = value.strip()
 
     try:
         update_config_value(DEFAULT_CONFIG_PATH, section, name, coerced)
